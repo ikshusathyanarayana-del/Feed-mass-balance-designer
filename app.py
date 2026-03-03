@@ -7,7 +7,7 @@ import pandas as pd
 # ==========================================
 st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
 st.title("⚙️ Dynamic Waste-to-Energy Plant Designer")
-st.markdown("Clean mass balance routing with detailed downstream process systems and an interactive Calorific Value (CV) toggle.")
+st.markdown("Clean mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and full Excel table mapping.")
 
 # ==========================================
 # UI: SIDEBAR INPUTS
@@ -15,8 +15,7 @@ st.markdown("Clean mass balance routing with detailed downstream process systems
 st.sidebar.header("1. Operational Input")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
-# THE NEW TOGGLE SWITCH
-excel_mode = st.sidebar.toggle("🧮 Match Isabela Excel CV Logic", value=False, help="Overrides standard CV math to match the original spreadsheet's hidden groupings (e.g., splitting WtE organics 50/50 wet/dry).")
+excel_mode = st.sidebar.toggle("🧮 Match Isabela Excel CV Logic", value=False, help="Overrides standard CV math to match the original spreadsheet's hidden groupings (e.g., splitting WtE organics into WET/DRY assumptions).")
 
 st.sidebar.header("2. Client Preferences")
 pref_tech = st.sidebar.multiselect(
@@ -34,22 +33,22 @@ energy_output = st.sidebar.multiselect(
 with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        food_waste = st.number_input("Food", value=51.27, step=0.1)
-        garden_waste = st.number_input("Garden", value=15.89, step=0.1)
+        food_waste = st.number_input("Food Waste", value=51.27, step=0.1)
+        garden_waste = st.number_input("Garden Waste", value=15.89, step=0.1)
         plastics = st.number_input("Plastics", value=15.54, step=0.1)
-        paper = st.number_input("Paper", value=6.73, step=0.1)
+        paper = st.number_input("Paper & Cardboard", value=6.73, step=0.1)
         textile = st.number_input("Textile", value=2.04, step=0.1)
-        others = st.number_input("Others", value=1.48, step=0.1)
-    with col2:
         pampers = st.number_input("Pampers", value=4.10, step=0.1)
-        wood = st.number_input("Wood", value=0.18, step=0.1)
-        inerts = st.number_input("Inerts", value=1.79, step=0.1)
-        ferrous = st.number_input("Ferrous", value=0.60, step=0.1)
-        non_ferrous = st.number_input("Non-Ferrous", value=0.38, step=0.1)
+    with col2:
+        wood = st.number_input("Wood Products", value=0.18, step=0.1)
+        inerts = st.number_input("Inerts (Stones/Glass)", value=1.79, step=0.1)
+        ferrous = st.number_input("Metals (Ferrous)", value=0.60, step=0.1)
+        non_ferrous = st.number_input("Metals (Non-Ferrous)", value=0.38, step=0.1)
+        others = st.number_input("Others Components", value=1.48, step=0.1)
+        rubber = st.number_input("Rubber", value=0.00, step=0.1)
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
-    st.markdown("*(Set to 100% for perfect theoretical sorting)*")
     eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) 
     eff_trommel = st.slider("Trommel (Organics)", 0, 100, 100) 
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100)
@@ -64,36 +63,43 @@ with st.sidebar.expander("💧 5. Moisture Content (% Dry Material)", expanded=F
         dry_plastics = st.number_input("Plastics Dry %", value=100.0) / 100.0
         dry_paper = st.number_input("Paper Dry %", value=80.0) / 100.0
         dry_textile = st.number_input("Textile Dry %", value=50.0) / 100.0
-    with col2:
         dry_pampers = st.number_input("Pampers Dry %", value=50.0) / 100.0
+    with col2:
         dry_wood = st.number_input("Wood Dry %", value=80.0) / 100.0
         dry_inerts = st.number_input("Inerts Dry %", value=100.0) / 100.0
         dry_ferrous = st.number_input("Ferrous Dry %", value=100.0) / 100.0
         dry_non_ferrous = st.number_input("Non-Ferrous Dry %", value=100.0) / 100.0
-        dry_others = st.number_input("Others Dry %", value=60.0) / 100.0
+        dry_others = st.number_input("Others Dry %", value=80.0) / 100.0
+        dry_rubber = st.number_input("Rubber Dry %", value=60.0) / 100.0
 
-# --- EXPANDER 6: CALORIFIC VALUES ---
+# --- EXPANDER 6: CALORIFIC VALUES (MATCHING EXCEL TABLE) ---
 with st.sidebar.expander("🔥 6. Calorific Values (Kcal/kg)", expanded=False):
+    st.markdown("*(Matches 'Material to WtE' Excel Table)*")
     col1, col2 = st.columns(2)
     with col1:
-        cv_food = st.number_input("Food CV", value=1200, step=100)
-        cv_garden = st.number_input("Garden CV", value=1200, step=100)
-        cv_plastics = st.number_input("Plastics CV", value=3300, step=100)
-        cv_paper = st.number_input("Paper CV", value=3585, step=100)
-        cv_textile = st.number_input("Textile CV", value=3871, step=100)
+        cv_paper = st.number_input("Paper & Cardboard", value=3585, step=100)
+        cv_plastics = st.number_input("Plastics", value=3300, step=100)
+        cv_wood = st.number_input("Wood Products", value=3100, step=100)
+        cv_textile = st.number_input("Textile", value=3872, step=100)
+        cv_pampers = st.number_input("Pampers", value=1840, step=100)
+        cv_rubber = st.number_input("Rubber", value=2400, step=100)
+        cv_others = st.number_input("Others Components", value=3200, step=100)
     with col2:
-        cv_pampers = st.number_input("Pampers CV", value=1840, step=100)
-        cv_wood = st.number_input("Wood CV", value=3100, step=100)
-        cv_inerts = st.number_input("Inerts CV", value=0, step=100)
-        cv_ferrous = st.number_input("Ferrous CV", value=0, step=100)
-        cv_others = st.number_input("Others CV", value=3200, step=100)
+        cv_inerts = st.number_input("Inerts (Stones/Glass)", value=0, step=100)
+        cv_ferrous = st.number_input("Metals (Ferrous)", value=0, step=100)
+        cv_non_ferrous = st.number_input("Metals (Non-Ferrous)", value=0, step=100)
+        
+        st.markdown("**Organics (Excel Split)**")
+        cv_org_wet = st.number_input("Organic - WET", value=526, step=10)
+        cv_org_dry = st.number_input("Organic - DRY", value=2629, step=10)
+        cv_food = st.number_input("Organic - Base (Standard)", value=1200, step=100)
 
 # ==========================================
 # DATA COMPILATION
 # ==========================================
 materials = {
     'Food_Waste': {'pct': food_waste, 'dry_frac': dry_food, 'cv': cv_food},
-    'Garden_Waste': {'pct': garden_waste, 'dry_frac': dry_garden, 'cv': cv_garden},
+    'Garden_Waste': {'pct': garden_waste, 'dry_frac': dry_garden, 'cv': cv_food}, # Base CV
     'Plastics': {'pct': plastics, 'dry_frac': dry_plastics, 'cv': cv_plastics},
     'Paper_Cardboard': {'pct': paper, 'dry_frac': dry_paper, 'cv': cv_paper},
     'Textile': {'pct': textile, 'dry_frac': dry_textile, 'cv': cv_textile},
@@ -101,8 +107,9 @@ materials = {
     'Wood': {'pct': wood, 'dry_frac': dry_wood, 'cv': cv_wood},
     'Inerts': {'pct': inerts, 'dry_frac': dry_inerts, 'cv': cv_inerts},
     'Ferrous': {'pct': ferrous, 'dry_frac': dry_ferrous, 'cv': cv_ferrous},
-    'Non_Ferrous': {'pct': non_ferrous, 'dry_frac': dry_non_ferrous, 'cv': 0},
-    'Others': {'pct': others, 'dry_frac': dry_others, 'cv': cv_others}
+    'Non_Ferrous': {'pct': non_ferrous, 'dry_frac': dry_non_ferrous, 'cv': cv_non_ferrous},
+    'Others': {'pct': others, 'dry_frac': dry_others, 'cv': cv_others},
+    'Rubber': {'pct': rubber, 'dry_frac': dry_rubber, 'cv': cv_rubber}
 }
 
 total_input_pct = sum(m['pct'] for m in materials.values())
@@ -286,19 +293,19 @@ def run_mass_balance():
             tpd_to_wte = data['tpd']
             if tpd_to_wte > 0.01:
                 if excel_mode and name in ['Food_Waste', 'Garden_Waste']:
-                    # Apply the 50/50 split from the spreadsheet
+                    # Apply the 50/50 split using the EXACT numbers from the UI sidebar
                     half_tpd = tpd_to_wte / 2.0
                     
-                    # WET Waste Assumption (525.8 Kcal/kg)
-                    total_kcal += half_tpd * 525.8
-                    wte_energy_data.append({"Material": f"{name} (WET Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": 526})
+                    # WET Waste Assumption 
+                    total_kcal += half_tpd * cv_org_wet
+                    wte_energy_data.append({"Material": f"{name} (WET Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_wet})
                     
-                    # DRY Waste Assumption (2629.0 Kcal/kg)
-                    total_kcal += half_tpd * 2629.0
-                    wte_energy_data.append({"Material": f"{name} (DRY Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": 2629})
+                    # DRY Waste Assumption 
+                    total_kcal += half_tpd * cv_org_dry
+                    wte_energy_data.append({"Material": f"{name} (DRY Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_dry})
                     continue 
 
-                # Standard calculation for everything else (or if Excel Mode is OFF)
+                # Standard calculation
                 component_kcal = tpd_to_wte * data['cv']
                 total_kcal += component_kcal
                 wte_energy_data.append({
@@ -324,7 +331,7 @@ st.divider()
 
 st.subheader("🔥 WtE Energy & Calorific Value Analysis")
 if excel_mode:
-    st.info("🧮 **Excel Mode is ON:** The calculations below are overriding standard physical math to match the specific groupings and split assumptions used in the original Isabela MRF spreadsheet.")
+    st.info("🧮 **Excel Mode is ON:** The calculations below are overriding standard physical math to split Organics into WET/DRY assumptions, matching the original Isabela MRF spreadsheet.")
 
 colA, colB, colC = st.columns(3)
 colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
@@ -341,5 +348,6 @@ with col_table2:
     st.dataframe(df_mb, use_container_width=True)
     csv = df_mb.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Mass Balance Data", data=csv, file_name="mass_balance.csv", mime="text/csv")
+
 
 
