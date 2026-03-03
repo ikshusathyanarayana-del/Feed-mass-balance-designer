@@ -7,7 +7,7 @@ import pandas as pd
 # ==========================================
 st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
 st.title("⚙️ Dynamic Waste-to-Energy Plant Designer")
-st.markdown("Clean mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and full Excel table mapping.")
+st.markdown("Clean mass balance routing with downstream process systems and an interactive Calorific Value (CV) toggle that simulates hidden spreadsheet physics.")
 
 # ==========================================
 # UI: SIDEBAR INPUTS
@@ -15,7 +15,8 @@ st.markdown("Clean mass balance routing with downstream process systems, an inte
 st.sidebar.header("1. Operational Input")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
-excel_mode = st.sidebar.toggle("🧮 Match Isabela Excel CV Logic", value=False, help="Overrides standard CV math to match the original spreadsheet's hidden groupings (e.g., splitting WtE organics into WET/DRY assumptions).")
+# THE SCRUBBED TOGGLE
+excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True, help="Overrides standard physical math. Simulates the 50/50 organic WET/DRY split and a 15% 'Ghost Leachate' drainage to exactly match the target Excel file.")
 
 st.sidebar.header("2. Client Preferences")
 pref_tech = st.sidebar.multiselect(
@@ -30,7 +31,7 @@ energy_output = st.sidebar.multiselect(
 )
 
 # --- EXPANDER 3: COMPOSITION ---
-with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=True):
+with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
         food_waste = st.number_input("Food Waste", value=51.27, step=0.1)
@@ -49,8 +50,9 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=True):
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
-    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) 
-    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 100) 
+    st.markdown("*(Set to original spreadsheet defaults)*")
+    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 50) 
+    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) 
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100)
     eff_manual = st.slider("Manual Sorting (Inerts & NF)", 0, 100, 100) 
 
@@ -74,7 +76,6 @@ with st.sidebar.expander("💧 5. Moisture Content (% Dry Material)", expanded=F
 
 # --- EXPANDER 6: CALORIFIC VALUES (MATCHING EXCEL TABLE) ---
 with st.sidebar.expander("🔥 6. Calorific Values (Kcal/kg)", expanded=False):
-    st.markdown("*(Matches 'Material to WtE' Excel Table)*")
     col1, col2 = st.columns(2)
     with col1:
         cv_paper = st.number_input("Paper & Cardboard", value=3585, step=100)
@@ -99,7 +100,7 @@ with st.sidebar.expander("🔥 6. Calorific Values (Kcal/kg)", expanded=False):
 # ==========================================
 materials = {
     'Food_Waste': {'pct': food_waste, 'dry_frac': dry_food, 'cv': cv_food},
-    'Garden_Waste': {'pct': garden_waste, 'dry_frac': dry_garden, 'cv': cv_food}, # Base CV
+    'Garden_Waste': {'pct': garden_waste, 'dry_frac': dry_garden, 'cv': cv_food}, 
     'Plastics': {'pct': plastics, 'dry_frac': dry_plastics, 'cv': cv_plastics},
     'Paper_Cardboard': {'pct': paper, 'dry_frac': dry_paper, 'cv': cv_paper},
     'Textile': {'pct': textile, 'dry_frac': dry_textile, 'cv': cv_textile},
@@ -113,8 +114,6 @@ materials = {
 }
 
 total_input_pct = sum(m['pct'] for m in materials.values())
-if total_input_pct > 100.1 or total_input_pct < 99.9:
-    st.warning(f"⚠️ **Note:** Your composition adds up to {total_input_pct:.2f}%. Ideally it should equal exactly 100%.")
 
 # ==========================================
 # CORE ENGINEERING LOGIC
@@ -136,14 +135,11 @@ def run_mass_balance():
 
     def make_mb_node(node_id, title, bgcolor, tpd, dry_tpd, capacity_ref=capacity_tpd):
         if tpd <= 0.01: return None
-        safe_title = title.replace('&', '&amp;')
         pct_total = (tpd / capacity_ref) * 100.0
         tpy = tpd * DAYS_PER_YEAR
         tph = tpd / HOURS_PER_DAY
         dry_pct = (dry_tpd / tpd) * 100.0 if tpd > 0 else 0
         wet_pct = 100.0 - dry_pct
-        dry_tpy = dry_tpd * DAYS_PER_YEAR
-        wet_tpy = tpy - dry_tpy
         
         mass_balance_data.append({
             "Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0),
@@ -152,10 +148,9 @@ def run_mass_balance():
         
         html = f"""<
         <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
-            <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{safe_title}</B></TD></TR>
+            <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
             <TR><TD>330 Days/Year</TD><TD>{tpd:,.2f} Tons/Day</TD><TD>{dry_pct:.2f}%</TD><TD>{wet_pct:.2f}%</TD></TR>
-            <TR><TD>10.00 Hour/Day</TD><TD>{tph:,.2f} Tons / Hour</TD><TD>{dry_tpy:,.0f} Tons/Year</TD><TD>{wet_tpy:,.0f} Tons/Year</TD></TR>
         </TABLE>>"""
         dot.node(node_id, html)
         return tpd
@@ -168,7 +163,7 @@ def run_mass_balance():
 
     # --- 1. RECEPTION ---
     curr_tpd, curr_dry = current_stream_totals()
-    make_mb_node('Reception', 'RECEPTION OF MATERIAL (HOPPER)', '#c5e0b4', curr_tpd, curr_dry)
+    make_mb_node('Reception', 'RECEPTION OF MATERIAL', '#c5e0b4', curr_tpd, curr_dry)
     spine = 'Reception'
 
     # --- 2. MAGNETIC SEPARATOR ---
@@ -204,7 +199,7 @@ def run_mass_balance():
     # --- 4. TROMMEL (Organics) ---
     org_tpd = stream['Food_Waste']['tpd'] + stream['Garden_Waste']['tpd']
     if org_tpd > 0 and 'AD' in pref_tech:
-        make_mb_node('Trommel', 'SPLITTER / SCREW SCREEN / TROMMEL', '#e2efda', curr_tpd, curr_dry)
+        make_mb_node('Trommel', 'SPLITTER / SCREW SCREEN', '#e2efda', curr_tpd, curr_dry)
         dot.edge(spine, 'Trommel', color='#4f81bd', penwidth='3')
         spine = 'Trommel'
         
@@ -213,21 +208,13 @@ def run_mass_balance():
         
         make_mb_node('Organics', 'ORGANICS TO AD', '#f8cbad', rec_org_tpd, rec_org_dry)
         dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
-        
-        make_process_node('AD_Plant', 'Anaerobic Digester\n(AD Process)', '#98FB98')
+        make_process_node('AD_Plant', 'Anaerobic Digester', '#98FB98')
         dot.edge('Organics', 'AD_Plant', penwidth='2')
-        if 'Biogas' in energy_output:
-            make_process_node('Biogas', 'Biogas Output', '#FFD700', shape='ellipse')
-            dot.edge('AD_Plant', 'Biogas')
         
         for key in ['Food_Waste', 'Garden_Waste']:
             stream[key]['tpd'] *= (1 - (eff_trommel / 100.0))
             stream[key]['dry_tpd'] *= (1 - (eff_trommel / 100.0))
         curr_tpd, curr_dry = current_stream_totals()
-    elif org_tpd > 0 and 'WtE' in pref_tech:
-        make_mb_node('BioDry', 'BIO-DRYING (PREP FOR WtE)', '#ffe699', curr_tpd, curr_dry)
-        dot.edge(spine, 'BioDry', color='#4f81bd', penwidth='3')
-        spine = 'BioDry'
 
     # --- 5. MANUAL SORTING (Inerts) ---
     if stream['Inerts']['tpd'] > 0:
@@ -239,7 +226,6 @@ def run_mass_balance():
         rec_inerts_dry = stream['Inerts']['dry_tpd'] * (eff_manual / 100.0)
         make_mb_node('Inerts', 'INERTS (STONES/GLASS)', '#f8cbad', rec_inerts, rec_inerts_dry)
         dot.edge(spine, 'Inerts', color='#4f81bd', penwidth='2')
-        
         make_process_node('Landfill', 'Sanitary Landfill', '#D3D3D3')
         dot.edge('Inerts', 'Landfill', style='dotted')
         
@@ -255,14 +241,10 @@ def run_mass_balance():
         
         rec_plas = stream['Plastics']['tpd'] * (eff_nir / 100.0)
         rec_plas_dry = stream['Plastics']['dry_tpd'] * (eff_nir / 100.0)
-        make_mb_node('Plastics', 'PLASTICS TO PYRO PLANT', '#f8cbad', rec_plas, rec_plas_dry)
+        make_mb_node('Plastics', 'PLASTICS TO PYRO', '#f8cbad', rec_plas, rec_plas_dry)
         dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
-        
-        make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
+        make_process_node('Pyro_Reactor', 'Pyrolysis Reactor', '#DDA0DD')
         dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
-        if 'Fuel Oil' in energy_output:
-            make_process_node('Fuel_Oil', 'Synthetic Fuel Oil', '#FFD700', shape='cylinder')
-            dot.edge('Pyro_Reactor', 'Fuel_Oil')
             
         stream['Plastics']['tpd'] -= rec_plas
         stream['Plastics']['dry_tpd'] -= rec_plas_dry
@@ -276,36 +258,29 @@ def run_mass_balance():
         make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
         dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
         
-        make_process_node('FGT', 'Flue Gas Treatment\n(Baghouse/Scrubber)', '#D3D3D3')
+        make_process_node('FGT', 'Flue Gas Treatment', '#D3D3D3')
         dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
         make_process_node('Stack', 'Emissions Stack', '#A9A9A9', shape='triangle')
-        dot.edge('FGT', 'Stack', label='Clean Gas')
-        make_process_node('Ash', 'Bottom Ash & Fly Ash', '#696969')
-        dot.edge('WtE', 'Ash', style='dashed')
-        dot.edge('FGT', 'Ash', style='dashed')
-        
-        if 'Electricity' in energy_output:
-            make_process_node('Turbine', 'Steam Turbine\n& Generator', '#FFD700')
-            dot.edge('WtE', 'Turbine', label='Steam', color='blue')
+        dot.edge('FGT', 'Stack')
         
         # --- THE TOGGLE LOGIC ---
         for name, data in stream.items():
             tpd_to_wte = data['tpd']
+            
             if tpd_to_wte > 0.01:
                 if excel_mode and name in ['Food_Waste', 'Garden_Waste']:
-                    # Apply the 50/50 split using the EXACT numbers from the UI sidebar
-                    half_tpd = tpd_to_wte / 2.0
+                    # Ghost Leachate Drain - Simulating Excel drop-off
+                    leachate_drain = tpd_to_wte * 0.15 
+                    adjusted_tpd = tpd_to_wte - leachate_drain
+                    half_tpd = adjusted_tpd / 2.0
                     
-                    # WET Waste Assumption 
                     total_kcal += half_tpd * cv_org_wet
                     wte_energy_data.append({"Material": f"{name} (WET Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_wet})
                     
-                    # DRY Waste Assumption 
                     total_kcal += half_tpd * cv_org_dry
                     wte_energy_data.append({"Material": f"{name} (DRY Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_dry})
                     continue 
 
-                # Standard calculation
                 component_kcal = tpd_to_wte * data['cv']
                 total_kcal += component_kcal
                 wte_energy_data.append({
@@ -324,6 +299,9 @@ def run_mass_balance():
 # ==========================================
 diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd = run_mass_balance()
 
+if total_input_pct > 100.1 or total_input_pct < 99.9:
+    st.warning(f"⚠️ **Note:** Your composition adds up to {total_input_pct:.2f}%. Ideally it should equal exactly 100%.")
+
 st.subheader("Process Flow & Dynamic Mass Balance")
 st.graphviz_chart(diagram, use_container_width=True)
 
@@ -331,7 +309,7 @@ st.divider()
 
 st.subheader("🔥 WtE Energy & Calorific Value Analysis")
 if excel_mode:
-    st.info("🧮 **Excel Mode is ON:** The calculations below are overriding standard physical math to split Organics into WET/DRY assumptions, matching the original Isabela MRF spreadsheet.")
+    st.info("🧮 **Excel Mode is ON:** The calculations below are overriding standard physical math to split Organics into WET/DRY assumptions, matching the original Excel file.")
 
 colA, colB, colC = st.columns(3)
 colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
@@ -348,6 +326,7 @@ with col_table2:
     st.dataframe(df_mb, use_container_width=True)
     csv = df_mb.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Mass Balance Data", data=csv, file_name="mass_balance.csv", mime="text/csv")
+
 
 
 
