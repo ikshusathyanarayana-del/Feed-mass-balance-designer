@@ -7,13 +7,16 @@ import pandas as pd
 # ==========================================
 st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
 st.title("⚙️ Dynamic Waste-to-Energy Plant Designer")
-st.markdown("Clean mass balance routing with detailed downstream process systems (WtE Backend, Pyrolysis, AD) and interactive Calorific Value (CV) tracking.")
+st.markdown("Clean mass balance routing with detailed downstream process systems and an interactive Calorific Value (CV) toggle.")
 
 # ==========================================
 # UI: SIDEBAR INPUTS
 # ==========================================
 st.sidebar.header("1. Operational Input")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
+
+# THE NEW TOGGLE SWITCH
+excel_mode = st.sidebar.toggle("🧮 Match Isabela Excel CV Logic", value=False, help="Overrides standard CV math to match the original spreadsheet's hidden groupings (e.g., splitting WtE organics 50/50 wet/dry).")
 
 st.sidebar.header("2. Client Preferences")
 pref_tech = st.sidebar.multiselect(
@@ -31,15 +34,16 @@ energy_output = st.sidebar.multiselect(
 with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        food_waste = st.number_input("Food", value=51.27, step=1.0)
-        garden_waste = st.number_input("Garden", value=15.89, step=1.0)
-        plastics = st.number_input("Plastics", value=15.54, step=1.0)
-        paper = st.number_input("Paper", value=6.73, step=1.0)
-        textile = st.number_input("Textile", value=2.04, step=1.0)
+        food_waste = st.number_input("Food", value=51.27, step=0.1)
+        garden_waste = st.number_input("Garden", value=15.89, step=0.1)
+        plastics = st.number_input("Plastics", value=15.54, step=0.1)
+        paper = st.number_input("Paper", value=6.73, step=0.1)
+        textile = st.number_input("Textile", value=2.04, step=0.1)
+        others = st.number_input("Others", value=1.48, step=0.1)
     with col2:
-        pampers = st.number_input("Pampers", value=4.10, step=1.0)
+        pampers = st.number_input("Pampers", value=4.10, step=0.1)
         wood = st.number_input("Wood", value=0.18, step=0.1)
-        inerts = st.number_input("Inerts", value=1.79, step=1.0)
+        inerts = st.number_input("Inerts", value=1.79, step=0.1)
         ferrous = st.number_input("Ferrous", value=0.60, step=0.1)
         non_ferrous = st.number_input("Non-Ferrous", value=0.38, step=0.1)
 
@@ -66,6 +70,7 @@ with st.sidebar.expander("💧 5. Moisture Content (% Dry Material)", expanded=F
         dry_inerts = st.number_input("Inerts Dry %", value=100.0) / 100.0
         dry_ferrous = st.number_input("Ferrous Dry %", value=100.0) / 100.0
         dry_non_ferrous = st.number_input("Non-Ferrous Dry %", value=100.0) / 100.0
+        dry_others = st.number_input("Others Dry %", value=60.0) / 100.0
 
 # --- EXPANDER 6: CALORIFIC VALUES ---
 with st.sidebar.expander("🔥 6. Calorific Values (Kcal/kg)", expanded=False):
@@ -81,7 +86,7 @@ with st.sidebar.expander("🔥 6. Calorific Values (Kcal/kg)", expanded=False):
         cv_wood = st.number_input("Wood CV", value=3100, step=100)
         cv_inerts = st.number_input("Inerts CV", value=0, step=100)
         cv_ferrous = st.number_input("Ferrous CV", value=0, step=100)
-        cv_non_ferrous = st.number_input("Non-Ferrous CV", value=0, step=100)
+        cv_others = st.number_input("Others CV", value=3200, step=100)
 
 # ==========================================
 # DATA COMPILATION
@@ -96,7 +101,8 @@ materials = {
     'Wood': {'pct': wood, 'dry_frac': dry_wood, 'cv': cv_wood},
     'Inerts': {'pct': inerts, 'dry_frac': dry_inerts, 'cv': cv_inerts},
     'Ferrous': {'pct': ferrous, 'dry_frac': dry_ferrous, 'cv': cv_ferrous},
-    'Non_Ferrous': {'pct': non_ferrous, 'dry_frac': dry_non_ferrous, 'cv': cv_non_ferrous},
+    'Non_Ferrous': {'pct': non_ferrous, 'dry_frac': dry_non_ferrous, 'cv': 0},
+    'Others': {'pct': others, 'dry_frac': dry_others, 'cv': cv_others}
 }
 
 total_input_pct = sum(m['pct'] for m in materials.values())
@@ -212,7 +218,6 @@ def run_mass_balance():
             stream[key]['dry_tpd'] *= (1 - (eff_trommel / 100.0))
         curr_tpd, curr_dry = current_stream_totals()
     elif org_tpd > 0 and 'WtE' in pref_tech:
-        # If Organics aren't going to AD, they need Bio-Drying before hitting the WtE plant
         make_mb_node('BioDry', 'BIO-DRYING (PREP FOR WtE)', '#ffe699', curr_tpd, curr_dry)
         dot.edge(spine, 'BioDry', color='#4f81bd', penwidth='3')
         spine = 'BioDry'
@@ -256,7 +261,7 @@ def run_mass_balance():
         stream['Plastics']['dry_tpd'] -= rec_plas_dry
         curr_tpd, curr_dry = current_stream_totals()
 
-    # --- 7. WtE PLANT (Front & Back End) ---
+    # --- 7. WtE PLANT & CALORIFIC VALUE ENGINE ---
     wte_energy_data = []
     total_kcal = 0
 
@@ -264,13 +269,10 @@ def run_mass_balance():
         make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
         dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
         
-        # Detailed Process Backend
         make_process_node('FGT', 'Flue Gas Treatment\n(Baghouse/Scrubber)', '#D3D3D3')
         dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
-        
         make_process_node('Stack', 'Emissions Stack', '#A9A9A9', shape='triangle')
         dot.edge('FGT', 'Stack', label='Clean Gas')
-        
         make_process_node('Ash', 'Bottom Ash & Fly Ash', '#696969')
         dot.edge('WtE', 'Ash', style='dashed')
         dot.edge('FGT', 'Ash', style='dashed')
@@ -279,14 +281,29 @@ def run_mass_balance():
             make_process_node('Turbine', 'Steam Turbine\n& Generator', '#FFD700')
             dot.edge('WtE', 'Turbine', label='Steam', color='blue')
         
-        # Calculate CV
+        # --- THE TOGGLE LOGIC ---
         for name, data in stream.items():
-            if data['tpd'] > 0.01:
-                component_kcal = data['tpd'] * data['cv']
+            tpd_to_wte = data['tpd']
+            if tpd_to_wte > 0.01:
+                if excel_mode and name in ['Food_Waste', 'Garden_Waste']:
+                    # Apply the 50/50 split from the spreadsheet
+                    half_tpd = tpd_to_wte / 2.0
+                    
+                    # WET Waste Assumption (525.8 Kcal/kg)
+                    total_kcal += half_tpd * 525.8
+                    wte_energy_data.append({"Material": f"{name} (WET Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": 526})
+                    
+                    # DRY Waste Assumption (2629.0 Kcal/kg)
+                    total_kcal += half_tpd * 2629.0
+                    wte_energy_data.append({"Material": f"{name} (DRY Assumption)", "Tons/Day to WtE": round(half_tpd, 2), "CV (Kcal/kg)": 2629})
+                    continue 
+
+                # Standard calculation for everything else (or if Excel Mode is OFF)
+                component_kcal = tpd_to_wte * data['cv']
                 total_kcal += component_kcal
                 wte_energy_data.append({
                     "Material": name.replace('_', ' '),
-                    "Tons/Day to WtE": round(data['tpd'], 2),
+                    "Tons/Day to WtE": round(tpd_to_wte, 2),
                     "CV (Kcal/kg)": data['cv']
                 })
                 
@@ -306,6 +323,9 @@ st.graphviz_chart(diagram, use_container_width=True)
 st.divider()
 
 st.subheader("🔥 WtE Energy & Calorific Value Analysis")
+if excel_mode:
+    st.info("🧮 **Excel Mode is ON:** The calculations below are overriding standard physical math to match the specific groupings and split assumptions used in the original Isabela MRF spreadsheet.")
+
 colA, colB, colC = st.columns(3)
 colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
 colB.metric("Average CV (Kcal/kg)", f"{avg_cv_kcal:,.0f} Kcal/kg")
@@ -321,4 +341,5 @@ with col_table2:
     st.dataframe(df_mb, use_container_width=True)
     csv = df_mb.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Mass Balance Data", data=csv, file_name="mass_balance.csv", mime="text/csv")
+
 
