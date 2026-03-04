@@ -1,6 +1,7 @@
 import streamlit as st
 import graphviz
 import pandas as pd
+import os
 
 # ==========================================
 # PAGE CONFIGURATION
@@ -12,6 +13,14 @@ st.markdown("Clean mass balance routing with downstream process systems and an i
 # ==========================================
 # UI: SIDEBAR INPUTS
 # ==========================================
+# --- ADDING THE LOGO ---
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+else:
+    st.sidebar.markdown("*(Upload a 'logo.png' or 'logo.jpg' to GitHub to display your company logo here)*")
+
 st.sidebar.header("1. Operational Input")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
@@ -326,7 +335,3 @@ with col_table2:
     st.dataframe(df_mb, use_container_width=True)
     csv = df_mb.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Mass Balance Data", data=csv, file_name="mass_balance.csv", mime="text/csv")
-
-
-
-
