@@ -120,7 +120,7 @@ total_input_pct = sum(m['pct'] for m in materials.values())
 def run_mass_balance():
     DAYS_PER_YEAR = 330
     HOURS_PER_DAY = 10.0
-    ad_tpd_total = 0 # Variable to track mass going to AD
+    ad_tpd_total = 0 
 
     stream = {}
     for name, props in materials.items():
@@ -198,12 +198,24 @@ def run_mass_balance():
         
         rec_org_tpd = org_tpd * (eff_trommel / 100.0)
         rec_org_dry = (stream['Food_Waste']['dry_tpd'] + stream['Garden_Waste']['dry_tpd']) * (eff_trommel / 100.0)
-        ad_tpd_total = rec_org_tpd # Save AD throughput for emissions math
+        ad_tpd_total = rec_org_tpd 
         
         make_mb_node('Organics', 'ORGANICS TO AD', '#f8cbad', rec_org_tpd, rec_org_dry)
         dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
+        
+        # --- RESTORED AD DETAILS ---
         make_process_node('AD_Plant', 'Anaerobic Digester', '#98FB98')
         dot.edge('Organics', 'AD_Plant', penwidth='2')
+        
+        make_process_node('Compost', 'Compost/Fertilizer\n(~15 TPD)', '#8FBC8F', shape='cylinder')
+        dot.edge('AD_Plant', 'Compost', style='dashed')
+        
+        if 'Biogas' in energy_output or 'Electricity' in energy_output:
+            make_process_node('Biogas', 'Biogas Output', '#FFD700', shape='ellipse')
+            dot.edge('AD_Plant', 'Biogas', color='orange')
+            if 'Electricity' in energy_output:
+                make_process_node('AD_CHP', 'AD CHP Engine\n(1.4 MW Elec)', '#FFD700')
+                dot.edge('Biogas', 'AD_CHP', color='orange')
         
         for key in ['Food_Waste', 'Garden_Waste']:
             stream[key]['tpd'] *= (1 - (eff_trommel / 100.0))
@@ -230,8 +242,21 @@ def run_mass_balance():
         rec_plas_dry = stream['Plastics']['dry_tpd'] * (eff_nir / 100.0)
         make_mb_node('Plastics', 'PLASTICS TO PYRO', '#f8cbad', rec_plas, rec_plas_dry)
         dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
-        make_process_node('Pyro_Reactor', 'Pyrolysis Reactor', '#DDA0DD')
+        
+        # --- RESTORED PYROLYSIS DETAILS ---
+        make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
         dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
+        
+        make_process_node('CarbonBlack', 'Carbon Black', '#A9A9A9', shape='cylinder')
+        dot.edge('Pyro_Reactor', 'CarbonBlack', style='dashed')
+        
+        if 'Fuel Oil' in energy_output or 'Electricity' in energy_output:
+            make_process_node('Fuel_Oil', 'Synthetic Fuel Oil\n(9,000 L/Day)', '#FFD700', shape='ellipse')
+            dot.edge('Pyro_Reactor', 'Fuel_Oil', color='orange')
+            if 'Electricity' in energy_output:
+                make_process_node('Pyro_CHP', 'Pyro CHP Engine\n(1.6 MW Elec)', '#FFD700')
+                dot.edge('Fuel_Oil', 'Pyro_CHP', color='orange')
+                
         stream['Plastics']['tpd'] -= rec_plas
         stream['Plastics']['dry_tpd'] -= rec_plas_dry
         curr_tpd, curr_dry = current_stream_totals()
@@ -242,8 +267,21 @@ def run_mass_balance():
     if curr_tpd > 0.01 and 'WtE' in pref_tech:
         make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
         dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
-        make_process_node('FGT', 'Flue Gas Treatment', '#D3D3D3')
+        
+        # --- RESTORED WtE DETAILS ---
+        make_process_node('FGT', 'Flue Gas Treatment\n(4-Chamber Bag Filter)', '#D3D3D3')
         dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
+        
+        make_process_node('Stack', 'Emissions Stack\n(with CEMS)', '#A9A9A9', shape='triangle')
+        dot.edge('FGT', 'Stack', label='Clean Gas')
+        
+        make_process_node('Ash', 'Bottom & Fly Ash', '#696969', shape='cylinder')
+        dot.edge('WtE', 'Ash', style='dashed')
+        dot.edge('FGT', 'Ash', style='dashed')
+        
+        if 'Electricity' in energy_output:
+            make_process_node('Turbine', 'Steam Turbine & Gen\n(3.0 MW Elec)', '#FFD700')
+            dot.edge('WtE', 'Turbine', label='Steam', color='blue')
         
         for name, data in stream.items():
             tpd_to_wte = data['tpd']
@@ -337,26 +375,19 @@ with tab2:
 
     # --- AD CO2e MATH ENGINE ---
     if 'AD' in pref_tech and ad_tpd_total > 0:
-        # 1. Establish Ratios
         total_org_pct = food_waste + garden_waste
         ratio_food = food_waste / total_org_pct if total_org_pct > 0 else 0
         ratio_garden = garden_waste / total_org_pct if total_org_pct > 0 else 0
         
         doc_avg = (ratio_food * doc_food) + (ratio_garden * doc_garden)
-        M_ad = ad_tpd_total * 330 # Annual mass to AD
+        M_ad = ad_tpd_total * 330 
         
-        # 2. Methane Avoidance (E_avoid)
         e_avoid = M_ad * doc_avg * doc_f * mcf * f_ch4 * (16/12) * gwp_ch4
-        
-        # 3. Energy Offset (E_offset)
         e_offset = (M_ad * y_biogas * pct_ch4_biogas * lhv_ch4 * eta_elec) * ef_grid
-        
-        # 4. Plant Emissions (E_plant)
         e_plant = e_offset * parasitic_load
         
         total_ad_co2_saved = e_avoid + e_offset - e_plant
 
-        # Output Display
         st.divider()
         st.markdown(f"### 📉 Total AD Carbon Reduction: **{total_ad_co2_saved:,.0f} tons of CO2e / year**")
         
