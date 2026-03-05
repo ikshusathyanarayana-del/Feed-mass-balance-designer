@@ -95,7 +95,7 @@ with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
     cv_food = st.number_input("Organic - Base (Standard)", value=1200, step=100)
 
 # ==========================================
-# DATA COMPILATION
+# DATA COMPILATION & MASS BALANCE ENGINE
 # ==========================================
 materials = {
     'Food_Waste': {'pct': food_waste, 'dry_frac': dry_food, 'cv': cv_food},
@@ -114,9 +114,6 @@ materials = {
 
 total_input_pct = sum(m['pct'] for m in materials.values())
 
-# ==========================================
-# CORE ENGINEERING LOGIC
-# ==========================================
 def run_mass_balance():
     DAYS_PER_YEAR = 330
     HOURS_PER_DAY = 10.0
@@ -139,18 +136,11 @@ def run_mass_balance():
         tpy = tpd * DAYS_PER_YEAR
         dry_pct = (dry_tpd / tpd) * 100.0 if tpd > 0 else 0
         wet_pct = 100.0 - dry_pct
-        
-        mass_balance_data.append({
-            "Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0),
-            "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"
-        })
-        
-        html = f"""<
-        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        mass_balance_data.append({"Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0), "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"})
+        html = f"""<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
             <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
-            <TR><TD>330 Days/Year</TD><TD>{tpd:,.2f} Tons/Day</TD><TD>{dry_pct:.2f}%</TD><TD>{wet_pct:.2f}%</TD></TR>
-        </TABLE>>"""
+            <TR><TD>330 Days/Year</TD><TD>{tpd:,.2f} Tons/Day</TD><TD>{dry_pct:.2f}%</TD><TD>{wet_pct:.2f}%</TD></TR></TABLE>>"""
         dot.node(node_id, html)
         return tpd
 
@@ -202,11 +192,8 @@ def run_mass_balance():
         
         make_mb_node('Organics', 'ORGANICS TO AD', '#f8cbad', rec_org_tpd, rec_org_dry)
         dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
-        
-        # --- RESTORED AD DETAILS ---
         make_process_node('AD_Plant', 'Anaerobic Digester', '#98FB98')
         dot.edge('Organics', 'AD_Plant', penwidth='2')
-        
         make_process_node('Compost', 'Compost/Fertilizer\n(~15 TPD)', '#8FBC8F', shape='cylinder')
         dot.edge('AD_Plant', 'Compost', style='dashed')
         
@@ -242,11 +229,8 @@ def run_mass_balance():
         rec_plas_dry = stream['Plastics']['dry_tpd'] * (eff_nir / 100.0)
         make_mb_node('Plastics', 'PLASTICS TO PYRO', '#f8cbad', rec_plas, rec_plas_dry)
         dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
-        
-        # --- RESTORED PYROLYSIS DETAILS ---
         make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
         dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
-        
         make_process_node('CarbonBlack', 'Carbon Black', '#A9A9A9', shape='cylinder')
         dot.edge('Pyro_Reactor', 'CarbonBlack', style='dashed')
         
@@ -267,14 +251,10 @@ def run_mass_balance():
     if curr_tpd > 0.01 and 'WtE' in pref_tech:
         make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
         dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
-        
-        # --- RESTORED WtE DETAILS ---
         make_process_node('FGT', 'Flue Gas Treatment\n(4-Chamber Bag Filter)', '#D3D3D3')
         dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
-        
         make_process_node('Stack', 'Emissions Stack\n(with CEMS)', '#A9A9A9', shape='triangle')
         dot.edge('FGT', 'Stack', label='Clean Gas')
-        
         make_process_node('Ash', 'Bottom & Fly Ash', '#696969', shape='cylinder')
         dot.edge('WtE', 'Ash', style='dashed')
         dot.edge('FGT', 'Ash', style='dashed')
@@ -298,11 +278,7 @@ def run_mass_balance():
 
                 component_kcal = tpd_to_wte * data['cv']
                 total_kcal += component_kcal
-                wte_energy_data.append({
-                    "Material": name.replace('_', ' '),
-                    "Tons/Day": round(tpd_to_wte, 2),
-                    "CV (Kcal/kg)": data['cv']
-                })
+                wte_energy_data.append({"Material": name.replace('_', ' '), "Tons/Day": round(tpd_to_wte, 2), "CV (Kcal/kg)": data['cv']})
                 
     avg_cv_kcal = (total_kcal / curr_tpd) if curr_tpd > 0 else 0
     avg_cv_mj = avg_cv_kcal * 0.004184
@@ -323,13 +299,9 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
     st.graphviz_chart(diagram, use_container_width=True)
-
     st.divider()
-
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
-    if excel_mode:
-        st.info("🧮 **Excel Mode is ON:** The calculations below override standard physical math to match the target Excel file.")
-
+    
     colA, colB, colC = st.columns(3)
     colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
     colB.metric("Average CV (Kcal/kg)", f"{avg_cv_kcal:,.0f} Kcal/kg")
@@ -343,58 +315,113 @@ with tab1:
         st.markdown("**Overall Mass Balance Data**")
         df_mb = pd.DataFrame(mb_data)
         st.dataframe(df_mb, use_container_width=True)
-        csv = df_mb.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Mass Balance CSV", data=csv, file_name="mass_balance.csv", mime="text/csv")
 
 
 with tab2:
-    st.subheader("Anaerobic Digester (AD) CO2e Reduction Model")
-    st.markdown("Calculate the exact Greenhouse Gas (GHG) offset generated by the AD plant using IPCC Tier 1 mass balance methodologies.")
+    # --- INDEPENDENT ENVIRONMENTAL TOGGLES ---
+    st.subheader("🌍 Environmental & CO2e Reduction Models")
+    st.markdown("Toggle the subsystems below to instantly calculate your combined Greenhouse Gas (GHG) offsets independent of the main plant layout.")
+    
+    t_col1, t_col2, t_col3 = st.columns(3)
+    with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
+    with t_col2: calc_pyro = st.toggle("🟣 Include Pyrolysis Emissions", value=True)
+    with t_col3: calc_wte = st.toggle("🔴 Include WtE Emissions", value=True)
+
+    # Placeholders for math results
+    total_ad_co2 = 0
+    total_pyro_co2 = 0
+    total_wte_co2 = 0
+    
+    st.divider()
     
     # Custom Assumption Sliders
     st.markdown("#### 🎛️ Engineering Assumptions & Variables")
-    col_env1, col_env2, col_env3 = st.columns(3)
+    col_env1, col_env2, col_env3, col_env4 = st.columns(4)
     with col_env1:
-        st.markdown("**IPCC Organic Factors**")
-        doc_food = st.number_input("DOC (Food Waste)", value=0.15, step=0.01)
-        doc_garden = st.number_input("DOC (Garden Waste)", value=0.20, step=0.01)
-        doc_f = st.slider("Fraction Degraded (DOCf)", 0.0, 1.0, 0.50, 0.01)
-    with col_env2:
-        st.markdown("**Landfill & Climate Metrics**")
-        mcf = st.slider("Methane Correction Factor (MCF)", 0.0, 1.0, 1.0, 0.1)
-        f_ch4 = st.slider("Landfill Gas CH4 Fraction (F)", 0.0, 1.0, 0.50, 0.01)
-        gwp_ch4 = st.number_input("Methane GWP (100-yr)", value=28)
+        st.markdown("**General Framework**")
         ef_grid = st.number_input("Grid Emission Factor (tCO2/MWh)", value=0.67, step=0.01)
+        gwp_ch4 = st.number_input("Methane GWP (100-yr)", value=28)
+        mcf = st.slider("Methane Correction Factor", 0.0, 1.0, 1.0, 0.1)
+        f_ch4 = st.slider("Landfill CH4 Fraction", 0.0, 1.0, 0.50, 0.01)
+        
+    with col_env2:
+        st.markdown("**AD Plant Metrics**")
+        doc_avg_base = st.slider("Average DOC (Organics)", 0.05, 0.30, 0.16, 0.01)
+        doc_f = st.slider("Fraction Degraded (DOCf)", 0.0, 1.0, 0.50, 0.01)
+        ad_elec_yield = st.number_input("AD Yield (MWh/ton)", value=0.158, format="%.3f")
+        ad_parasitic = st.slider("AD Parasitic Load (%)", 0.0, 1.0, 0.10, 0.01)
+        
     with col_env3:
-        st.markdown("**AD Biogas & Engine Efficiency**")
-        y_biogas = st.number_input("Biogas Yield (m3/ton)", value=100)
-        pct_ch4_biogas = st.slider("Biogas CH4 %", 0.0, 1.0, 0.60, 0.01)
-        lhv_ch4 = st.number_input("Methane LHV (MWh/m3)", value=0.010, format="%.3f")
-        eta_elec = st.slider("CHP Electrical Efficiency", 0.0, 1.0, 0.38, 0.01)
-        parasitic_load = st.slider("Plant Parasitic Load (%)", 0.0, 1.0, 0.10, 0.01)
-
-    # --- AD CO2e MATH ENGINE ---
-    if 'AD' in pref_tech and ad_tpd_total > 0:
-        total_org_pct = food_waste + garden_waste
-        ratio_food = food_waste / total_org_pct if total_org_pct > 0 else 0
-        ratio_garden = garden_waste / total_org_pct if total_org_pct > 0 else 0
+        st.markdown("**Pyrolysis Metrics**")
+        pyro_oil_yield = st.number_input("Oil Yield (Liters/ton)", value=450)
+        pyro_fuel_offset = st.number_input("Fuel Offset (tCO2/L)", value=0.00268, format="%.5f")
+        pyro_elec_yield = st.number_input("Pyro CHP (MWh/ton)", value=1.92, format="%.2f")
+        pyro_parasitic = st.slider("Pyro Parasitic (%)", 0.0, 1.0, 0.15, 0.01)
         
-        doc_avg = (ratio_food * doc_food) + (ratio_garden * doc_garden)
+    with col_env4:
+        st.markdown("**WtE Incinerator Metrics**")
+        wte_elec_yield = st.number_input("WtE Yield (MWh/ton)", value=0.60, format="%.2f")
+        wte_avoidance = st.number_input("WtE Methane Avoidance", value=1.00, format="%.2f", help="tCO2e avoided per ton incinerated")
+        wte_fossil_ef = st.number_input("Fossil Stack EF", value=0.35, format="%.2f", help="Direct fossil CO2 from stack per ton")
+        wte_parasitic = st.slider("WtE Parasitic (%)", 0.0, 1.0, 0.12, 0.01)
+
+    # --- 1. AD CO2e MATH ENGINE ---
+    if calc_ad and ad_tpd_total > 0:
         M_ad = ad_tpd_total * 330 
+        e_avoid_ad = M_ad * doc_avg_base * doc_f * mcf * f_ch4 * (16/12) * gwp_ch4
+        e_offset_ad = (M_ad * ad_elec_yield) * ef_grid
+        e_plant_ad = e_offset_ad * ad_parasitic
+        total_ad_co2 = e_avoid_ad + e_offset_ad - e_plant_ad
         
-        e_avoid = M_ad * doc_avg * doc_f * mcf * f_ch4 * (16/12) * gwp_ch4
-        e_offset = (M_ad * y_biogas * pct_ch4_biogas * lhv_ch4 * eta_elec) * ef_grid
-        e_plant = e_offset * parasitic_load
+    # --- 2. PYROLYSIS CO2e MATH ENGINE ---
+    plastic_tpd_to_pyro = 0
+    for item in mass_balance_data:
+        if item["Process Node"] == 'PLASTICS TO PYRO':
+            plastic_tpd_to_pyro = item["Tons/Day"]
+            
+    if calc_pyro and plastic_tpd_to_pyro > 0:
+        M_pyro = plastic_tpd_to_pyro * 330
+        e_fuel_pyro = M_pyro * pyro_oil_yield * pyro_fuel_offset
+        e_offset_pyro = (M_pyro * pyro_elec_yield) * ef_grid
+        e_plant_pyro = e_offset_pyro * pyro_parasitic
+        total_pyro_co2 = e_fuel_pyro + e_offset_pyro - e_plant_pyro
         
-        total_ad_co2_saved = e_avoid + e_offset - e_plant
+    # --- 3. WtE CO2e MATH ENGINE ---
+    if calc_wte and final_wte_tpd > 0:
+        M_wte = final_wte_tpd * 330
+        e_avoid_wte = M_wte * wte_avoidance
+        e_offset_wte = (M_wte * wte_elec_yield) * ef_grid
+        e_stack_fossil = M_wte * wte_fossil_ef
+        e_plant_wte = e_offset_wte * wte_parasitic
+        total_wte_co2 = e_avoid_wte + e_offset_wte - e_plant_wte - e_stack_fossil
 
-        st.divider()
-        st.markdown(f"### 📉 Total AD Carbon Reduction: **{total_ad_co2_saved:,.0f} tons of CO2e / year**")
-        
+    # --- GRAND TOTAL DISPLAY ---
+    grand_total_co2 = total_ad_co2 + total_pyro_co2 + total_wte_co2
+    
+    st.divider()
+    st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align: center;'>{grand_total_co2:,.0f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
+    st.divider()
+
+    # --- INDIVIDUAL BREAKDOWNS ---
+    if calc_ad and ad_tpd_total > 0:
+        st.markdown(f"### 🟢 AD Carbon Reduction: **{total_ad_co2:,.0f} tons CO2e**")
         res1, res2, res3 = st.columns(3)
-        res1.metric("1. Avoided Methane", f"+ {e_avoid:,.0f} tCO2e", help="Emissions prevented from rotting in a landfill.")
-        res2.metric("2. Fossil Grid Offset", f"+ {e_offset:,.0f} tCO2e", help="Emissions saved by generating renewable power.")
-        res3.metric("3. Plant Parasitic Load", f"- {e_plant:,.0f} tCO2e", help="Emissions subtracted to power the AD plant itself.")
+        res1.metric("Avoided Methane", f"+ {e_avoid_ad:,.0f} tCO2e")
+        res2.metric("Grid Offset (Biogas)", f"+ {e_offset_ad:,.0f} tCO2e")
+        res3.metric("AD Parasitic Load", f"- {e_plant_ad:,.0f} tCO2e")
         
-    else:
-        st.warning("⚠️ **Anaerobic Digester is either turned off in Client Preferences or the Trommel efficiency is set to 0. Adjust settings to view AD carbon offsets.**")
+    if calc_pyro and plastic_tpd_to_pyro > 0:
+        st.markdown(f"### 🟣 Pyrolysis Carbon Reduction: **{total_pyro_co2:,.0f} tons CO2e**")
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Fuel Displacement", f"+ {e_fuel_pyro:,.0f} tCO2e")
+        p2.metric("Grid Offset (CHP)", f"+ {e_offset_pyro:,.0f} tCO2e")
+        p3.metric("Pyro Parasitic Load", f"- {e_plant_pyro:,.0f} tCO2e")
+        
+    if calc_wte and final_wte_tpd > 0:
+        st.markdown(f"### 🔴 WtE Incinerator Carbon Reduction: **{total_wte_co2:,.0f} tons CO2e**")
+        w1, w2, w3, w4 = st.columns(4)
+        w1.metric("Avoided Methane", f"+ {e_avoid_wte:,.0f} tCO2e")
+        w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
+        w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
+        w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
