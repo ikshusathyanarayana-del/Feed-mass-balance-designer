@@ -375,7 +375,8 @@ with tab2:
         
     # --- 2. PYROLYSIS CO2e MATH ENGINE ---
     plastic_tpd_to_pyro = 0
-    for item in mass_balance_data:
+    # FIX: Changed mass_balance_data to mb_data
+    for item in mb_data: 
         if item["Process Node"] == 'PLASTICS TO PYRO':
             plastic_tpd_to_pyro = item["Tons/Day"]
             
