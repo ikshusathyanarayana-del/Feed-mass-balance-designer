@@ -331,10 +331,12 @@ with tab2:
         st.info("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
         
         # 1. Fetch Dynamic TPDs from the Mass Balance (and convert to TPH)
-        # The baseline in the screenshot was 313.22 TPD for a 350 TPD plant (a ratio of 89.49%). 
-        # We dynamically scale the baseline based on the user's capacity input.
         lf_tpd = capacity_tpd * (313.22 / 350.0) 
-        wte_tpd = final_wte_tpd
+        
+        # THE FIX: Deduct the 15% Plant Leachate from WtE just like the client's green table!
+        plant_leachate = capacity_tpd * 0.15
+        wte_tpd = max(0, final_wte_tpd - plant_leachate)
+        
         ad_tpd = ad_tpd_total
         ptf_tpd = plastic_tpd_to_pyro
         
