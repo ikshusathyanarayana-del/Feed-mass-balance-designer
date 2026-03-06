@@ -319,37 +319,61 @@ with tab2:
     st.subheader("🌍 Environmental & CO2e Reduction Models")
     
     # --- THE NEW EXCEL MATCH TOGGLE ---
-    match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics to exactly match the flat multipliers in the client's Excel screenshot (365 days, 0 grid offsets).")
+    match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
     
+    # We must calculate PTF TPD here so it is available to both logic paths
+    plastic_tpd_to_pyro = 0
+    for item in mb_data: 
+        if item["Process Node"] == 'PLASTICS TO PYRO':
+            plastic_tpd_to_pyro = item["Tons/Day"]
+
     if match_excel_co2:
-        st.info("⚠️ **Excel Mode is ON:** Displaying the exact flat-multiplier calculations from the legacy baseline spreadsheet. Grid Offsets are currently ignored.")
+        st.info("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
         
-        # Hardcoded math from the screenshot
-        lf_tph = 13.051
-        wte_tph = 5.043
-        ad_tph = 6.085
-        ptf_tph = 0.833
-        bio_tph = 0.656
+        # 1. Fetch Dynamic TPDs from the Mass Balance (and convert to TPH)
+        # The baseline in the screenshot was 313.22 TPD for a 350 TPD plant (a ratio of 89.49%). 
+        # We dynamically scale the baseline based on the user's capacity input.
+        lf_tpd = capacity_tpd * (313.22 / 350.0) 
+        wte_tpd = final_wte_tpd
+        ad_tpd = ad_tpd_total
+        ptf_tpd = plastic_tpd_to_pyro
         
-        total_lf = lf_tph * 24 * 365 * 1.160
-        total_wte = wte_tph * 24 * 365 * 0.510
-        total_ad = ad_tph * 24 * 365 * 0.027
-        total_ptf = ptf_tph * 24 * 365 * 0.700
-        total_bio = bio_tph * 24 * 365 * 0.300
+        # The Bio Composting tonnage was calculated as roughly 10.78% of the AD input in the legacy sheet
+        bio_tpd = ad_tpd * (15.744 / 146.048) if ad_tpd > 0 else 0
+        
+        lf_tph = lf_tpd / 24.0
+        wte_tph = wte_tpd / 24.0
+        ad_tph = ad_tpd / 24.0
+        ptf_tph = ptf_tpd / 24.0
+        bio_tph = bio_tpd / 24.0
+        
+        # 2. Hardcode the exact flat multipliers from the Excel Screenshot
+        lf_mult = 1.160
+        wte_mult = 0.510
+        ad_mult = 0.027
+        ptf_mult = 0.700
+        bio_mult = 0.300
+        
+        # 3. Perform the Excel Math (TPD * 365 Days * Multiplier)
+        total_lf = lf_tpd * 365 * lf_mult
+        total_wte = wte_tpd * 365 * wte_mult
+        total_ad = ad_tpd * 365 * ad_mult
+        total_ptf = ptf_tpd * 365 * ptf_mult
+        total_bio = bio_tpd * 365 * bio_mult
         
         total_process = total_wte + total_ad + total_ptf + total_bio
         grand_total_excel = total_lf - total_process
 
         st.divider()
-        st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction (Excel Baseline)</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction (Excel Logic)</h2>", unsafe_allow_html=True)
         st.markdown(f"<h1 style='text-align: center;'>{grand_total_excel:,.2f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
         st.divider()
 
         # Display exact table format
         excel_data = {
             "System": ["Landfill Baseline", "WtE Emission", "AD Emission", "PTF Emission", "Bio Composting"],
-            "tph": [lf_tph, wte_tph, ad_tph, ptf_tph, bio_tph],
-            "CO2/ton": [1.160, 0.510, 0.027, 0.700, 0.300],
+            "tph": [round(lf_tph, 3), round(wte_tph, 3), round(ad_tph, 3), round(ptf_tph, 3), round(bio_tph, 3)],
+            "CO2/ton": [lf_mult, wte_mult, ad_mult, ptf_mult, bio_mult],
             "Hr/day": [24, 24, 24, 24, 24],
             "Days/Annum": [365, 365, 365, 365, 365],
             "CO2/annum (Tons)": [round(total_lf, 2), round(total_wte, 2), round(total_ad, 2), round(total_ptf, 2), round(total_bio, 2)]
@@ -405,11 +429,6 @@ with tab2:
             e_offset_ad = (M_ad * ad_elec_yield) * ef_grid
             e_plant_ad = e_offset_ad * ad_parasitic
             total_ad_co2 = e_avoid_ad + e_offset_ad - e_plant_ad
-            
-        plastic_tpd_to_pyro = 0
-        for item in mb_data: 
-            if item["Process Node"] == 'PLASTICS TO PYRO':
-                plastic_tpd_to_pyro = item["Tons/Day"]
                 
         if calc_pyro and plastic_tpd_to_pyro > 0:
             M_pyro = plastic_tpd_to_pyro * 330
