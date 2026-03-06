@@ -396,7 +396,7 @@ with tab2:
         e_plant_wte = e_offset_wte * wte_parasitic
         total_wte_co2 = e_avoid_wte + e_offset_wte - e_plant_wte - e_stack_fossil
 
-    # --- GRAND TOTAL DISPLAY ---
+# --- GRAND TOTAL DISPLAY ---
     grand_total_co2 = total_ad_co2 + total_pyro_co2 + total_wte_co2
     
     st.divider()
@@ -426,3 +426,38 @@ with tab2:
         w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
         w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
         w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
+
+    # --- SAMPLE CALCULATIONS & REFERENCES ---
+    st.divider()
+    with st.expander("📐 View Sample Calculations & Engineering References"):
+        st.markdown("""
+        ### Document Baseline References
+        All primary equipment assumptions are derived directly from the **HSSI-Isabela Preliminary Techno Commercial Proposal (Nov 2025)**:
+        * **Total Capacity:** 350 TPD (Page 3)
+        * **AD Plant:** 150 TPD generating approx. 1.4 MW (Page 5)
+        * **Pyrolysis Plant:** 20 TPD generating 9,000 Liters of oil and 1.6 MW (Page 5)
+        * **WtE Plant:** 120 TPD generating approx. 3.0 MW (Page 5)
+
+        ---
+        ### 1. Anaerobic Digestion (AD) Formulas
+        * **Avoided Methane:** `M_ad × DOC_avg × DOC_f × MCF × F × (16/12) × GWP_CH4`
+          * *IPCC standard used to calculate fugitive landfill methane prevented.*
+        * **Grid Offset:** `(M_ad × AD_Elec_Yield) × EF_Grid`
+        * **Total Saved:** `Avoided + Offset - Parasitic Load`
+
+        ### 2. Pyrolysis (PTF) Formulas
+        * **Virgin Fuel Offset:** `M_pyro × Oil_Yield_per_ton × EF_Diesel`
+          * *Based on 450 Liters/ton yield (9,000L / 20 TPD) displacing virgin crude extraction.*
+        * **Grid Offset:** `(M_pyro × Pyro_Elec_Yield) × EF_Grid`
+          * *Based on 1.92 MWh/ton yield (1.6 MW × 24h / 20 TPD).*
+        * **Total Saved:** `Fuel Offset + Grid Offset - Parasitic Load`
+
+        ### 3. Waste-to-Energy (WtE) Formulas
+        * **Avoided Methane:** `M_wte × WtE_Avoidance_Factor`
+          * *Accounts for prevention of rotting for the residual paper/wood fraction.*
+        * **Grid Offset:** `(M_wte × WtE_Elec_Yield) × EF_Grid`
+          * *Based on 0.60 MWh/ton yield (3.0 MW × 24h / 120 TPD).*
+        * **Fossil Stack Emissions:** `M_wte × Fossil_Stack_EF`
+          * *Accounts for direct fossil CO2 emissions from burning unrecovered plastics.*
+        * **Total Saved:** `Avoided + Offset - Stack Emissions - Parasitic Load`
+        """)
