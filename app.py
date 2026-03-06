@@ -11,7 +11,7 @@ st.title("⚙️ Dynamic Waste-to-Energy Plant Designer")
 st.markdown("Clean mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and Environmental Impact modeling.")
 
 # ==========================================
-# UI: SIDEBAR INPUTS
+# UI: SIDEBAR INPUTS (ISABELA DEFAULTS)
 # ==========================================
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
@@ -116,7 +116,6 @@ total_input_pct = sum(m['pct'] for m in materials.values())
 
 def run_mass_balance():
     DAYS_PER_YEAR = 330
-    HOURS_PER_DAY = 10.0
     ad_tpd_total = 0 
 
     stream = {}
@@ -285,7 +284,6 @@ def run_mass_balance():
 
     return dot, mass_balance_data, wte_energy_data, avg_cv_kcal, avg_cv_mj, curr_tpd, ad_tpd_total
 
-# Execute core logic
 diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total = run_mass_balance()
 
 if total_input_pct > 100.1 or total_input_pct < 99.9:
@@ -318,146 +316,152 @@ with tab1:
 
 
 with tab2:
-    # --- INDEPENDENT ENVIRONMENTAL TOGGLES ---
     st.subheader("🌍 Environmental & CO2e Reduction Models")
-    st.markdown("Toggle the subsystems below to instantly calculate your combined Greenhouse Gas (GHG) offsets independent of the main plant layout.")
     
-    t_col1, t_col2, t_col3 = st.columns(3)
-    with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
-    with t_col2: calc_pyro = st.toggle("🟣 Include Pyrolysis Emissions", value=True)
-    with t_col3: calc_wte = st.toggle("🔴 Include WtE Emissions", value=True)
+    # --- THE NEW EXCEL MATCH TOGGLE ---
+    match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics to exactly match the flat multipliers in the client's Excel screenshot (365 days, 0 grid offsets).")
+    
+    if match_excel_co2:
+        st.info("⚠️ **Excel Mode is ON:** Displaying the exact flat-multiplier calculations from the legacy baseline spreadsheet. Grid Offsets are currently ignored.")
+        
+        # Hardcoded math from the screenshot
+        lf_tph = 13.051
+        wte_tph = 5.043
+        ad_tph = 6.085
+        ptf_tph = 0.833
+        bio_tph = 0.656
+        
+        total_lf = lf_tph * 24 * 365 * 1.160
+        total_wte = wte_tph * 24 * 365 * 0.510
+        total_ad = ad_tph * 24 * 365 * 0.027
+        total_ptf = ptf_tph * 24 * 365 * 0.700
+        total_bio = bio_tph * 24 * 365 * 0.300
+        
+        total_process = total_wte + total_ad + total_ptf + total_bio
+        grand_total_excel = total_lf - total_process
 
-    # Placeholders for math results
-    total_ad_co2 = 0
-    total_pyro_co2 = 0
-    total_wte_co2 = 0
-    
-    st.divider()
-    
-    # Custom Assumption Sliders
-    st.markdown("#### 🎛️ Engineering Assumptions & Variables")
-    col_env1, col_env2, col_env3, col_env4 = st.columns(4)
-    with col_env1:
-        st.markdown("**General Framework**")
-        ef_grid = st.number_input("Grid Emission Factor (tCO2/MWh)", value=0.67, step=0.01)
-        gwp_ch4 = st.number_input("Methane GWP (100-yr)", value=28)
-        mcf = st.slider("Methane Correction Factor", 0.0, 1.0, 1.0, 0.1)
-        f_ch4 = st.slider("Landfill CH4 Fraction", 0.0, 1.0, 0.50, 0.01)
-        
-    with col_env2:
-        st.markdown("**AD Plant Metrics**")
-        doc_avg_base = st.slider("Average DOC (Organics)", 0.05, 0.30, 0.16, 0.01)
-        doc_f = st.slider("Fraction Degraded (DOCf)", 0.0, 1.0, 0.50, 0.01)
-        ad_elec_yield = st.number_input("AD Yield (MWh/ton)", value=0.158, format="%.3f")
-        ad_parasitic = st.slider("AD Parasitic Load (%)", 0.0, 1.0, 0.10, 0.01)
-        
-    with col_env3:
-        st.markdown("**Pyrolysis Metrics**")
-        pyro_oil_yield = st.number_input("Oil Yield (Liters/ton)", value=450)
-        pyro_fuel_offset = st.number_input("Fuel Offset (tCO2/L)", value=0.00268, format="%.5f")
-        pyro_elec_yield = st.number_input("Pyro CHP (MWh/ton)", value=1.92, format="%.2f")
-        pyro_parasitic = st.slider("Pyro Parasitic (%)", 0.0, 1.0, 0.15, 0.01)
-        
-    with col_env4:
-        st.markdown("**WtE Incinerator Metrics**")
-        wte_elec_yield = st.number_input("WtE Yield (MWh/ton)", value=0.60, format="%.2f")
-        wte_avoidance = st.number_input("WtE Methane Avoidance", value=1.00, format="%.2f", help="tCO2e avoided per ton incinerated")
-        wte_fossil_ef = st.number_input("Fossil Stack EF", value=0.35, format="%.2f", help="Direct fossil CO2 from stack per ton")
-        wte_parasitic = st.slider("WtE Parasitic (%)", 0.0, 1.0, 0.12, 0.01)
+        st.divider()
+        st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction (Excel Baseline)</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center;'>{grand_total_excel:,.2f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
+        st.divider()
 
-    # --- 1. AD CO2e MATH ENGINE ---
-    if calc_ad and ad_tpd_total > 0:
-        M_ad = ad_tpd_total * 330 
-        e_avoid_ad = M_ad * doc_avg_base * doc_f * mcf * f_ch4 * (16/12) * gwp_ch4
-        e_offset_ad = (M_ad * ad_elec_yield) * ef_grid
-        e_plant_ad = e_offset_ad * ad_parasitic
-        total_ad_co2 = e_avoid_ad + e_offset_ad - e_plant_ad
+        # Display exact table format
+        excel_data = {
+            "System": ["Landfill Baseline", "WtE Emission", "AD Emission", "PTF Emission", "Bio Composting"],
+            "tph": [lf_tph, wte_tph, ad_tph, ptf_tph, bio_tph],
+            "CO2/ton": [1.160, 0.510, 0.027, 0.700, 0.300],
+            "Hr/day": [24, 24, 24, 24, 24],
+            "Days/Annum": [365, 365, 365, 365, 365],
+            "CO2/annum (Tons)": [round(total_lf, 2), round(total_wte, 2), round(total_ad, 2), round(total_ptf, 2), round(total_bio, 2)]
+        }
+        st.dataframe(pd.DataFrame(excel_data), use_container_width=True)
         
-    # --- 2. PYROLYSIS CO2e MATH ENGINE ---
-    plastic_tpd_to_pyro = 0
-    # FIX: Changed mass_balance_data to mb_data
-    for item in mb_data: 
-        if item["Process Node"] == 'PLASTICS TO PYRO':
-            plastic_tpd_to_pyro = item["Tons/Day"]
+    else:
+        # --- STANDARD DYNAMIC IPCC MATH ---
+        st.markdown("Toggle the subsystems below to instantly calculate your combined Greenhouse Gas (GHG) offsets independent of the main plant layout.")
+        t_col1, t_col2, t_col3 = st.columns(3)
+        with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
+        with t_col2: calc_pyro = st.toggle("🟣 Include Pyrolysis Emissions", value=True)
+        with t_col3: calc_wte = st.toggle("🔴 Include WtE Emissions", value=True)
+
+        total_ad_co2 = 0
+        total_pyro_co2 = 0
+        total_wte_co2 = 0
+        st.divider()
+        
+        st.markdown("#### 🎛️ Engineering Assumptions & Variables")
+        col_env1, col_env2, col_env3, col_env4 = st.columns(4)
+        with col_env1:
+            st.markdown("**General Framework**")
+            ef_grid = st.number_input("Grid Emission Factor (tCO2/MWh)", value=0.67, step=0.01)
+            gwp_ch4 = st.number_input("Methane GWP (100-yr)", value=28)
+            mcf = st.slider("Methane Correction Factor", 0.0, 1.0, 1.0, 0.1)
+            f_ch4 = st.slider("Landfill CH4 Fraction", 0.0, 1.0, 0.50, 0.01)
             
-    if calc_pyro and plastic_tpd_to_pyro > 0:
-        M_pyro = plastic_tpd_to_pyro * 330
-        e_fuel_pyro = M_pyro * pyro_oil_yield * pyro_fuel_offset
-        e_offset_pyro = (M_pyro * pyro_elec_yield) * ef_grid
-        e_plant_pyro = e_offset_pyro * pyro_parasitic
-        total_pyro_co2 = e_fuel_pyro + e_offset_pyro - e_plant_pyro
+        with col_env2:
+            st.markdown("**AD Plant Metrics**")
+            doc_avg_base = st.slider("Average DOC (Organics)", 0.05, 0.30, 0.16, 0.01)
+            doc_f = st.slider("Fraction Degraded (DOCf)", 0.0, 1.0, 0.50, 0.01)
+            ad_elec_yield = st.number_input("AD Yield (MWh/ton)", value=0.224, format="%.3f")
+            ad_parasitic = st.slider("AD Parasitic Load (%)", 0.0, 1.0, 0.10, 0.01)
+            
+        with col_env3:
+            st.markdown("**Pyrolysis Metrics**")
+            pyro_oil_yield = st.number_input("Oil Yield (Liters/ton)", value=450)
+            pyro_fuel_offset = st.number_input("Fuel Offset (tCO2/L)", value=0.00268, format="%.5f")
+            pyro_elec_yield = st.number_input("Pyro CHP (MWh/ton)", value=1.92, format="%.2f")
+            pyro_parasitic = st.slider("Pyro Parasitic (%)", 0.0, 1.0, 0.15, 0.01)
+            
+        with col_env4:
+            st.markdown("**WtE Incinerator Metrics**")
+            wte_elec_yield = st.number_input("WtE Yield (MWh/ton)", value=0.60, format="%.2f")
+            wte_avoidance = st.number_input("WtE Methane Avoidance", value=1.00, format="%.2f")
+            wte_fossil_ef = st.number_input("Fossil Stack EF", value=0.35, format="%.2f")
+            wte_parasitic = st.slider("WtE Parasitic (%)", 0.0, 1.0, 0.12, 0.01)
+
+        if calc_ad and ad_tpd_total > 0:
+            M_ad = ad_tpd_total * 330 
+            e_avoid_ad = M_ad * doc_avg_base * doc_f * mcf * f_ch4 * (16/12) * gwp_ch4
+            e_offset_ad = (M_ad * ad_elec_yield) * ef_grid
+            e_plant_ad = e_offset_ad * ad_parasitic
+            total_ad_co2 = e_avoid_ad + e_offset_ad - e_plant_ad
+            
+        plastic_tpd_to_pyro = 0
+        for item in mb_data: 
+            if item["Process Node"] == 'PLASTICS TO PYRO':
+                plastic_tpd_to_pyro = item["Tons/Day"]
+                
+        if calc_pyro and plastic_tpd_to_pyro > 0:
+            M_pyro = plastic_tpd_to_pyro * 330
+            e_fuel_pyro = M_pyro * pyro_oil_yield * pyro_fuel_offset
+            e_offset_pyro = (M_pyro * pyro_elec_yield) * ef_grid
+            e_plant_pyro = e_offset_pyro * pyro_parasitic
+            total_pyro_co2 = e_fuel_pyro + e_offset_pyro - e_plant_pyro
+            
+        if calc_wte and final_wte_tpd > 0:
+            M_wte = final_wte_tpd * 330
+            e_avoid_wte = M_wte * wte_avoidance
+            e_offset_wte = (M_wte * wte_elec_yield) * ef_grid
+            e_stack_fossil = M_wte * wte_fossil_ef
+            e_plant_wte = e_offset_wte * wte_parasitic
+            total_wte_co2 = e_avoid_wte + e_offset_wte - e_plant_wte - e_stack_fossil
+
+        grand_total_co2 = total_ad_co2 + total_pyro_co2 + total_wte_co2
         
-    # --- 3. WtE CO2e MATH ENGINE ---
-    if calc_wte and final_wte_tpd > 0:
-        M_wte = final_wte_tpd * 330
-        e_avoid_wte = M_wte * wte_avoidance
-        e_offset_wte = (M_wte * wte_elec_yield) * ef_grid
-        e_stack_fossil = M_wte * wte_fossil_ef
-        e_plant_wte = e_offset_wte * wte_parasitic
-        total_wte_co2 = e_avoid_wte + e_offset_wte - e_plant_wte - e_stack_fossil
+        st.divider()
+        st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center;'>{grand_total_co2:,.0f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
+        st.divider()
 
-# --- GRAND TOTAL DISPLAY ---
-    grand_total_co2 = total_ad_co2 + total_pyro_co2 + total_wte_co2
-    
-    st.divider()
-    st.markdown("<h2 style='text-align: center; color: #2e7d32;'>🌱 Total Plant Carbon Reduction</h2>", unsafe_allow_html=True)
-    st.markdown(f"<h1 style='text-align: center;'>{grand_total_co2:,.0f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
-    st.divider()
+        if calc_ad and ad_tpd_total > 0:
+            st.markdown(f"### 🟢 AD Carbon Reduction: **{total_ad_co2:,.0f} tons CO2e**")
+            res1, res2, res3 = st.columns(3)
+            res1.metric("Avoided Methane", f"+ {e_avoid_ad:,.0f} tCO2e")
+            res2.metric("Grid Offset (Biogas)", f"+ {e_offset_ad:,.0f} tCO2e")
+            res3.metric("AD Parasitic Load", f"- {e_plant_ad:,.0f} tCO2e")
+            
+        if calc_pyro and plastic_tpd_to_pyro > 0:
+            st.markdown(f"### 🟣 Pyrolysis Carbon Reduction: **{total_pyro_co2:,.0f} tons CO2e**")
+            p1, p2, p3 = st.columns(3)
+            p1.metric("Fuel Displacement", f"+ {e_fuel_pyro:,.0f} tCO2e")
+            p2.metric("Grid Offset (CHP)", f"+ {e_offset_pyro:,.0f} tCO2e")
+            p3.metric("Pyro Parasitic Load", f"- {e_plant_pyro:,.0f} tCO2e")
+            
+        if calc_wte and final_wte_tpd > 0:
+            st.markdown(f"### 🔴 WtE Incinerator Carbon Reduction: **{total_wte_co2:,.0f} tons CO2e**")
+            w1, w2, w3, w4 = st.columns(4)
+            w1.metric("Avoided Methane", f"+ {e_avoid_wte:,.0f} tCO2e")
+            w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
+            w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
+            w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
 
-    # --- INDIVIDUAL BREAKDOWNS ---
-    if calc_ad and ad_tpd_total > 0:
-        st.markdown(f"### 🟢 AD Carbon Reduction: **{total_ad_co2:,.0f} tons CO2e**")
-        res1, res2, res3 = st.columns(3)
-        res1.metric("Avoided Methane", f"+ {e_avoid_ad:,.0f} tCO2e")
-        res2.metric("Grid Offset (Biogas)", f"+ {e_offset_ad:,.0f} tCO2e")
-        res3.metric("AD Parasitic Load", f"- {e_plant_ad:,.0f} tCO2e")
-        
-    if calc_pyro and plastic_tpd_to_pyro > 0:
-        st.markdown(f"### 🟣 Pyrolysis Carbon Reduction: **{total_pyro_co2:,.0f} tons CO2e**")
-        p1, p2, p3 = st.columns(3)
-        p1.metric("Fuel Displacement", f"+ {e_fuel_pyro:,.0f} tCO2e")
-        p2.metric("Grid Offset (CHP)", f"+ {e_offset_pyro:,.0f} tCO2e")
-        p3.metric("Pyro Parasitic Load", f"- {e_plant_pyro:,.0f} tCO2e")
-        
-    if calc_wte and final_wte_tpd > 0:
-        st.markdown(f"### 🔴 WtE Incinerator Carbon Reduction: **{total_wte_co2:,.0f} tons CO2e**")
-        w1, w2, w3, w4 = st.columns(4)
-        w1.metric("Avoided Methane", f"+ {e_avoid_wte:,.0f} tCO2e")
-        w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
-        w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
-        w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
-
-    # --- SAMPLE CALCULATIONS & REFERENCES ---
-    st.divider()
-    with st.expander("📐 View Sample Calculations & Engineering References"):
-        st.markdown("""
-        ### Document Baseline References
-        All primary equipment assumptions are derived directly from the **HSSI-Isabela Preliminary Techno Commercial Proposal (Nov 2025)**:
-        * **Total Capacity:** 350 TPD (Page 3)
-        * **AD Plant:** 150 TPD generating approx. 1.4 MW (Page 5)
-        * **Pyrolysis Plant:** 20 TPD generating 9,000 Liters of oil and 1.6 MW (Page 5)
-        * **WtE Plant:** 120 TPD generating approx. 3.0 MW (Page 5)
-
-        ---
-        ### 1. Anaerobic Digestion (AD) Formulas
-        * **Avoided Methane:** `M_ad × DOC_avg × DOC_f × MCF × F × (16/12) × GWP_CH4`
-          * *IPCC standard used to calculate fugitive landfill methane prevented.*
-        * **Grid Offset:** `(M_ad × AD_Elec_Yield) × EF_Grid`
-        * **Total Saved:** `Avoided + Offset - Parasitic Load`
-
-        ### 2. Pyrolysis (PTF) Formulas
-        * **Virgin Fuel Offset:** `M_pyro × Oil_Yield_per_ton × EF_Diesel`
-          * *Based on 450 Liters/ton yield (9,000L / 20 TPD) displacing virgin crude extraction.*
-        * **Grid Offset:** `(M_pyro × Pyro_Elec_Yield) × EF_Grid`
-          * *Based on 1.92 MWh/ton yield (1.6 MW × 24h / 20 TPD).*
-        * **Total Saved:** `Fuel Offset + Grid Offset - Parasitic Load`
-
-        ### 3. Waste-to-Energy (WtE) Formulas
-        * **Avoided Methane:** `M_wte × WtE_Avoidance_Factor`
-          * *Accounts for prevention of rotting for the residual paper/wood fraction.*
-        * **Grid Offset:** `(M_wte × WtE_Elec_Yield) × EF_Grid`
-          * *Based on 0.60 MWh/ton yield (3.0 MW × 24h / 120 TPD).*
-        * **Fossil Stack Emissions:** `M_wte × Fossil_Stack_EF`
-          * *Accounts for direct fossil CO2 emissions from burning unrecovered plastics.*
-        * **Total Saved:** `Avoided + Offset - Stack Emissions - Parasitic Load`
-        """)
+        st.divider()
+        with st.expander("📐 View Sample Calculations & Engineering References"):
+            st.markdown("""
+            ### Document Baseline References
+            All primary equipment assumptions are derived directly from the **HSSI-Isabela Preliminary Techno Commercial Proposal (Nov 2025)**:
+            * **Total Capacity:** 350 TPD (Page 3)
+            * **AD Plant:** 150 TPD generating approx. 1.4 MW (Page 5)
+            * **Pyrolysis Plant:** 20 TPD generating 9,000 Liters of oil and 1.6 MW (Page 5)
+            * **WtE Plant:** 120 TPD generating approx. 3.0 MW (Page 5)
+            """)
