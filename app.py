@@ -20,12 +20,24 @@ elif os.path.exists("logo.jpg"):
 else:
     st.sidebar.markdown("*(Upload a 'logo.png' or 'logo.jpg' to GitHub to display your company logo here)*")
 
+st.sidebar.divider()
+tutorial_mode = st.sidebar.toggle("🎓 Enable Tutorial / Guide Mode", value=False)
+if tutorial_mode:
+    st.sidebar.info("💡 **Welcome to Tutorial Mode!** As you scroll through the app, look for these blue boxes. They will explain exactly what each control does and how it impacts the plant's design.")
+st.sidebar.divider()
+
 st.sidebar.header("1. Operational Input")
+if tutorial_mode:
+    st.sidebar.info("💡 **Plant Capacity:** This is the master scale for the whole plant. Changing this recalculates the TPD (Tons Per Day) for every single machine downstream.")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
-excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True, help="Overrides standard physical math. Simulates the 50/50 organic WET/DRY split and a 15% 'Ghost Leachate' drainage to exactly match the target Excel file.")
+excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True)
+if tutorial_mode:
+    st.sidebar.info("💡 **Excel Override:** When ON, this forces the WtE math to simulate a 15% leachate drain and a 50/50 wet/dry organic split to perfectly match the target baseline engineering spreadsheet.")
 
 st.sidebar.header("2. Client Preferences")
+if tutorial_mode:
+    st.sidebar.info("💡 **Technology Routing:** If you remove 'AD' or 'Pyrolysis', the mass balance will automatically route all organics and plastics directly into the WtE incinerator instead.")
 pref_tech = st.sidebar.multiselect(
     "Preferred Technology",
     options=['WtE', 'AD', 'Pyrolysis'],
@@ -39,6 +51,8 @@ energy_output = st.sidebar.multiselect(
 
 # --- EXPANDER 3: COMPOSITION ---
 with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
+    if tutorial_mode:
+        st.info("💡 **Waste Profile:** Adjust these percentages based on municipal waste studies. Changing the amount of plastics or food waste will completely alter the energy output and carbon footprint of the plant.")
     col1, col2 = st.columns(2)
     with col1:
         food_waste = st.number_input("Food Waste", value=51.27, step=0.1)
@@ -57,14 +71,17 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
-    st.markdown("*(Set to original spreadsheet defaults)*")
-    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 50) 
+    if tutorial_mode:
+        st.info("💡 **Equipment Sorting:** No machine is 100% perfect. For example, if you lower the NIR Sorter efficiency to 37%, it proves that some plastic slips past the cameras and ends up burning in the WtE incinerator instead of going to Pyrolysis.")
+    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) 
     eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) 
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100)
     eff_manual = st.slider("Manual Sorting (Inerts & NF)", 0, 100, 100) 
 
 # --- EXPANDER 5: MOISTURE & CV DATA ---
 with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
+    if tutorial_mode:
+        st.info("💡 **Thermodynamics:** These numbers dictate how much water is in the garbage and how much heat it produces when burned. These are highly technical values that dictate the final Steam Turbine output.")
     st.markdown("*Moisture Content (% Dry Material)*")
     dry_food = st.number_input("Food Dry %", value=15.0) / 100.0
     dry_garden = st.number_input("Garden Dry %", value=15.0) / 100.0
@@ -296,9 +313,14 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
+    if tutorial_mode:
+        st.info("💡 **Graphviz Engine:** This flow diagram generates automatically in real-time. If you change the Plant Capacity to 500 in the sidebar, watch the 'Tons/Day' metrics inside these boxes instantly update.")
     st.graphviz_chart(diagram, use_container_width=True)
     st.divider()
+    
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
+    if tutorial_mode:
+        st.info("💡 **Calorific Value (CV):** This section proves to the engineers that the final residual garbage entering the incinerator has enough heat energy to sustain a fire and spin the steam turbine without needing auxiliary fuel.")
     
     colA, colB, colC = st.columns(3)
     colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
@@ -314,33 +336,27 @@ with tab1:
         df_mb = pd.DataFrame(mb_data)
         st.dataframe(df_mb, use_container_width=True)
 
-
 with tab2:
     st.subheader("🌍 Environmental & CO2e Reduction Models")
-    
+    if tutorial_mode:
+        st.info("💡 **Environmental Models:** This tab runs complex greenhouse gas physics. You can either use dynamic, real-world IPCC physics, or force the app to match a legacy flat-multiplier spreadsheet.")
+        
     # --- THE NEW EXCEL MATCH TOGGLE ---
     match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
     
-    # We must calculate PTF TPD here so it is available to both logic paths
     plastic_tpd_to_pyro = 0
     for item in mb_data: 
         if item["Process Node"] == 'PLASTICS TO PYRO':
             plastic_tpd_to_pyro = item["Tons/Day"]
 
     if match_excel_co2:
-        st.info("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
+        st.warning("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
         
-        # 1. Fetch Dynamic TPDs from the Mass Balance (and convert to TPH)
         lf_tpd = capacity_tpd * (313.22 / 350.0) 
-        
-        # THE FIX: Deduct the 15% Plant Leachate from WtE just like the client's green table!
         plant_leachate = capacity_tpd * 0.15
         wte_tpd = max(0, final_wte_tpd - plant_leachate)
-        
         ad_tpd = ad_tpd_total
         ptf_tpd = plastic_tpd_to_pyro
-        
-        # The Bio Composting tonnage was calculated as roughly 10.78% of the AD input in the legacy sheet
         bio_tpd = ad_tpd * (15.744 / 146.048) if ad_tpd > 0 else 0
         
         lf_tph = lf_tpd / 24.0
@@ -349,14 +365,12 @@ with tab2:
         ptf_tph = ptf_tpd / 24.0
         bio_tph = bio_tpd / 24.0
         
-        # 2. Hardcode the exact flat multipliers from the Excel Screenshot
         lf_mult = 1.160
         wte_mult = 0.510
         ad_mult = 0.027
         ptf_mult = 0.700
         bio_mult = 0.300
         
-        # 3. Perform the Excel Math (TPD * 365 Days * Multiplier)
         total_lf = lf_tpd * 365 * lf_mult
         total_wte = wte_tpd * 365 * wte_mult
         total_ad = ad_tpd * 365 * ad_mult
@@ -371,7 +385,6 @@ with tab2:
         st.markdown(f"<h1 style='text-align: center;'>{grand_total_excel:,.2f} Metric Tons CO2e / Year</h1>", unsafe_allow_html=True)
         st.divider()
 
-        # Display exact table format
         excel_data = {
             "System": ["Landfill Baseline", "WtE Emission", "AD Emission", "PTF Emission", "Bio Composting"],
             "tph": [round(lf_tph, 3), round(wte_tph, 3), round(ad_tph, 3), round(ptf_tph, 3), round(bio_tph, 3)],
@@ -389,6 +402,9 @@ with tab2:
         with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
         with t_col2: calc_pyro = st.toggle("🟣 Include Pyrolysis Emissions", value=True)
         with t_col3: calc_wte = st.toggle("🔴 Include WtE Emissions", value=True)
+
+        if tutorial_mode:
+            st.info("💡 **Subsystem Toggles:** If you want to see exactly how much carbon *just* the AD plant saves, turn off the Pyrolysis and WtE switches. The Grand Total will instantly recalculate.")
 
         total_ad_co2 = 0
         total_pyro_co2 = 0
@@ -478,6 +494,8 @@ with tab2:
 
         st.divider()
         with st.expander("📐 View Sample Calculations & Engineering References"):
+            if tutorial_mode:
+                st.info("💡 **Documentation:** This section proves that your math isn't just a guess. It cites the specific formulas and page numbers used to build the tool.")
             st.markdown("""
             ### Document Baseline References
             All primary equipment assumptions are derived directly from the **HSSI-Isabela Preliminary Techno Commercial Proposal (Nov 2025)**:
