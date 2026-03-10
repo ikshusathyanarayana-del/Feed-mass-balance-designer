@@ -7,11 +7,11 @@ import os
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
-st.title("⚙️ Dynamic Waste-to-Energy Plant Designer")
-st.markdown("Clean mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and Environmental Impact modeling.")
+st.title("⚙️ Universal Waste-to-Energy Plant Designer")
+st.markdown("Universal mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and Environmental Impact modeling.")
 
 # ==========================================
-# UI: SIDEBAR INPUTS (ISABELA DEFAULTS)
+# UI: SIDEBAR INPUTS
 # ==========================================
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
@@ -35,14 +35,37 @@ excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True)
 if tutorial_mode:
     st.sidebar.info("💡 **Excel Override:** When ON, this forces the WtE math to simulate a 15% leachate drain and a 50/50 wet/dry organic split to perfectly match the target baseline engineering spreadsheet.")
 
-st.sidebar.header("2. Client Preferences")
+st.sidebar.header("2. Build Your Architecture")
 if tutorial_mode:
-    st.sidebar.info("💡 **Technology Routing:** If you remove 'AD' or 'Pyrolysis', the mass balance will automatically route all organics and plastics directly into the WtE incinerator instead.")
-pref_tech = st.sidebar.multiselect(
-    "Preferred Technology",
-    options=['WtE', 'AD', 'Pyrolysis'],
-    default=['WtE', 'AD', 'Pyrolysis']
+    st.sidebar.info("💡 **Universal Routing:** Add or remove machines here. The mass balance engine will automatically rewire the flowchart and route the garbage accordingly.")
+
+active_modules = st.sidebar.multiselect(
+    "Active Sorting Modules",
+    options=[
+        'Bag Opener (Leachate Drain)',
+        'Magnetic Separator (Ferrous)',
+        'Eddy Current (Non-Ferrous)',
+        'Trommel Screen (Organics)',
+        'Screw Press (Wet/Dry Split)',
+        'Manual Sorting (Inerts)',
+        'NIR Optical (Plastics)'
+    ],
+    default=[
+        'Bag Opener (Leachate Drain)',
+        'Magnetic Separator (Ferrous)',
+        'Trommel Screen (Organics)',
+        'Screw Press (Wet/Dry Split)',
+        'Manual Sorting (Inerts)',
+        'NIR Optical (Plastics)'
+    ]
 )
+
+active_destinations = st.sidebar.multiselect(
+    "Downstream Energy / Disposal",
+    options=['Anaerobic Digestion (AD)', 'Pyrolysis', 'WtE Incinerator', 'Sanitary Landfill'],
+    default=['Anaerobic Digestion (AD)', 'Pyrolysis', 'WtE Incinerator']
+)
+
 energy_output = st.sidebar.multiselect(
     "Desired Energy Output",
     options=['Electricity', 'Biogas', 'Fuel Oil'],
@@ -73,10 +96,13 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
     if tutorial_mode:
         st.info("💡 **Equipment Sorting:** No machine is 100% perfect. For example, if you lower the NIR Sorter efficiency to 37%, it proves that some plastic slips past the cameras and ends up burning in the WtE incinerator instead of going to Pyrolysis.")
-    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) 
-    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) 
-    eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100)
-    eff_manual = st.slider("Manual Sorting (Inerts & NF)", 0, 100, 100) 
+    eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
+    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) if 'NIR Optical (Plastics)' in active_modules else 0
+    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) if 'Trommel Screen (Organics)' in active_modules else 0
+    screw_press_solid = st.slider("Screw Press Solid Yield (%)", 0, 100, 40) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
+    eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100) if 'Magnetic Separator (Ferrous)' in active_modules else 0
+    eff_eddy = st.slider("Eddy Current (Non-Ferrous)", 0, 100, 100) if 'Eddy Current (Non-Ferrous)' in active_modules else 0
+    eff_manual = st.slider("Manual Sorting (Inerts)", 0, 100, 100) if 'Manual Sorting (Inerts)' in active_modules else 0
 
 # --- EXPANDER 5: MOISTURE & CV DATA ---
 with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
@@ -112,7 +138,7 @@ with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
     cv_food = st.number_input("Organic - Base (Standard)", value=1200, step=100)
 
 # ==========================================
-# DATA COMPILATION & MASS BALANCE ENGINE
+# DATA COMPILATION & UNIVERSAL MASS BALANCE ENGINE
 # ==========================================
 materials = {
     'Food_Waste': {'pct': food_waste, 'dry_frac': dry_food, 'cv': cv_food},
@@ -131,17 +157,19 @@ materials = {
 
 total_input_pct = sum(m['pct'] for m in materials.values())
 
-def run_mass_balance():
+def run_universal_mass_balance():
     DAYS_PER_YEAR = 330
     ad_tpd_total = 0 
+    plastic_tpd_to_pyro = 0
 
+    # Build initial active streams
     stream = {}
     for name, props in materials.items():
         tpd = (props['pct'] / 100.0) * capacity_tpd
         dry_tpd = tpd * props['dry_frac']
         stream[name] = {'tpd': tpd, 'dry_tpd': dry_tpd, 'cv': props['cv']}
 
-    dot = graphviz.Digraph(comment='Clean Hybrid Mass Balance', format='png')
+    dot = graphviz.Digraph(comment='Universal Hybrid Mass Balance', format='png')
     dot.attr(rankdir='TB', nodesep='0.6', ranksep='0.8')
     dot.attr('node', shape='none', fontname='Helvetica', fontsize='9')
     mass_balance_data = []
@@ -170,138 +198,196 @@ def run_mass_balance():
     make_mb_node('Reception', 'RECEPTION OF MATERIAL', '#c5e0b4', curr_tpd, curr_dry)
     spine = 'Reception'
 
-    if stream['Ferrous']['tpd'] > 0:
+    # --- DYNAMIC ROUTING ---
+    if 'Bag Opener (Leachate Drain)' in active_modules:
+        make_mb_node('BagOpener', 'BAG OPENER & DRAIN', '#e2efda', curr_tpd, curr_dry)
+        dot.edge(spine, 'BagOpener', color='#4f81bd', penwidth='3')
+        spine = 'BagOpener'
+        leachate_tpd = capacity_tpd * (eff_bag_leachate / 100.0)
+        # Deduct water proportionally from Food and Garden wet mass to preserve their dry mass
+        org_wet = stream['Food_Waste']['tpd'] + stream['Garden_Waste']['tpd']
+        if org_wet > 0 and leachate_tpd <= org_wet:
+            stream['Food_Waste']['tpd'] -= leachate_tpd * (stream['Food_Waste']['tpd']/org_wet)
+            stream['Garden_Waste']['tpd'] -= leachate_tpd * (stream['Garden_Waste']['tpd']/org_wet)
+        if leachate_tpd > 0:
+            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) # 0 dry mass
+            dot.edge(spine, 'Leachate', color='#4f81bd', penwidth='2')
+        curr_tpd, curr_dry = current_stream_totals()
+
+    if 'Magnetic Separator (Ferrous)' in active_modules and stream['Ferrous']['tpd'] > 0:
         make_mb_node('MagSep', 'MAGNETIC SEPARATOR', '#ccc1da', curr_tpd, curr_dry)
         dot.edge(spine, 'MagSep', color='#4f81bd', penwidth='3')
         spine = 'MagSep'
         rec_fe = stream['Ferrous']['tpd'] * (eff_mag / 100.0)
         rec_fe_dry = stream['Ferrous']['dry_tpd'] * (eff_mag / 100.0)
         if rec_fe > 0:
-            make_mb_node('Ferrous', 'FERROUS MATERIAL', '#f8cbad', rec_fe, rec_fe_dry)
+            make_mb_node('Ferrous', 'RECOVERED FERROUS', '#f8cbad', rec_fe, rec_fe_dry)
             dot.edge(spine, 'Ferrous', color='#4f81bd', penwidth='2')
             stream['Ferrous']['tpd'] -= rec_fe
             stream['Ferrous']['dry_tpd'] -= rec_fe_dry
         curr_tpd, curr_dry = current_stream_totals()
 
-    if stream['Non_Ferrous']['tpd'] > 0:
+    if 'Eddy Current (Non-Ferrous)' in active_modules and stream['Non_Ferrous']['tpd'] > 0:
         make_mb_node('Eddy', 'EDDY CURRENT SEPARATOR', '#ccc1da', curr_tpd, curr_dry)
         dot.edge(spine, 'Eddy', color='#4f81bd', penwidth='3')
         spine = 'Eddy'
-        rec_nf = stream['Non_Ferrous']['tpd'] * (eff_manual / 100.0)
-        rec_nf_dry = stream['Non_Ferrous']['dry_tpd'] * (eff_manual / 100.0)
+        rec_nf = stream['Non_Ferrous']['tpd'] * (eff_eddy / 100.0)
+        rec_nf_dry = stream['Non_Ferrous']['dry_tpd'] * (eff_eddy / 100.0)
         if rec_nf > 0:
-            make_mb_node('NonFerrous', 'NON-FERROUS MATERIAL', '#f8cbad', rec_nf, rec_nf_dry)
+            make_mb_node('NonFerrous', 'RECOVERED NON-FERROUS', '#f8cbad', rec_nf, rec_nf_dry)
             dot.edge(spine, 'NonFerrous', color='#4f81bd', penwidth='2')
             stream['Non_Ferrous']['tpd'] -= rec_nf
             stream['Non_Ferrous']['dry_tpd'] -= rec_nf_dry
         curr_tpd, curr_dry = current_stream_totals()
 
     org_tpd = stream['Food_Waste']['tpd'] + stream['Garden_Waste']['tpd']
-    if org_tpd > 0 and 'AD' in pref_tech:
-        make_mb_node('Trommel', 'SPLITTER / SCREW SCREEN', '#e2efda', curr_tpd, curr_dry)
+    if 'Trommel Screen (Organics)' in active_modules and org_tpd > 0:
+        make_mb_node('Trommel', 'TROMMEL SCREEN', '#e2efda', curr_tpd, curr_dry)
         dot.edge(spine, 'Trommel', color='#4f81bd', penwidth='3')
         spine = 'Trommel'
         
-        rec_org_tpd = org_tpd * (eff_trommel / 100.0)
-        rec_org_dry = (stream['Food_Waste']['dry_tpd'] + stream['Garden_Waste']['dry_tpd']) * (eff_trommel / 100.0)
-        ad_tpd_total = rec_org_tpd 
+        ext_food = stream['Food_Waste']['tpd'] * (eff_trommel / 100.0)
+        ext_food_dry = stream['Food_Waste']['dry_tpd'] * (eff_trommel / 100.0)
+        ext_garden = stream['Garden_Waste']['tpd'] * (eff_trommel / 100.0)
+        ext_garden_dry = stream['Garden_Waste']['dry_tpd'] * (eff_trommel / 100.0)
         
-        make_mb_node('Organics', 'ORGANICS TO AD', '#f8cbad', rec_org_tpd, rec_org_dry)
-        dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
-        make_process_node('AD_Plant', 'Anaerobic Digester', '#98FB98')
-        dot.edge('Organics', 'AD_Plant', penwidth='2')
-        make_process_node('Compost', 'Compost/Fertilizer\n(~15 TPD)', '#8FBC8F', shape='cylinder')
-        dot.edge('AD_Plant', 'Compost', style='dashed')
+        org_extracted = ext_food + ext_garden
+        org_extracted_dry = ext_food_dry + ext_garden_dry
         
-        if 'Biogas' in energy_output or 'Electricity' in energy_output:
-            make_process_node('Biogas', 'Biogas Output', '#FFD700', shape='ellipse')
-            dot.edge('AD_Plant', 'Biogas', color='orange')
-            if 'Electricity' in energy_output:
-                make_process_node('AD_CHP', 'AD CHP Engine\n(1.4 MW Elec)', '#FFD700')
-                dot.edge('Biogas', 'AD_CHP', color='orange')
+        stream['Food_Waste']['tpd'] -= ext_food
+        stream['Food_Waste']['dry_tpd'] -= ext_food_dry
+        stream['Garden_Waste']['tpd'] -= ext_garden
+        stream['Garden_Waste']['dry_tpd'] -= ext_garden_dry
         
-        for key in ['Food_Waste', 'Garden_Waste']:
-            stream[key]['tpd'] *= (1 - (eff_trommel / 100.0))
-            stream[key]['dry_tpd'] *= (1 - (eff_trommel / 100.0))
+        if 'Screw Press (Wet/Dry Split)' in active_modules:
+            make_mb_node('ScrewPress', 'ORGANICS SCREW PRESS', '#ffe699', org_extracted, org_extracted_dry)
+            dot.edge(spine, 'ScrewPress', color='#4f81bd', penwidth='2')
+            
+            rdf_org_tpd = org_extracted * (screw_press_solid / 100.0)
+            rdf_org_dry = min(org_extracted_dry, rdf_org_tpd)
+            ltp_org_tpd = org_extracted - rdf_org_tpd
+            ltp_org_dry = org_extracted_dry - rdf_org_dry
+            
+            ad_tpd_total = ltp_org_tpd
+            stream['Screw_Press_Dry'] = {'tpd': rdf_org_tpd, 'dry_tpd': rdf_org_dry, 'cv': cv_org_dry}
+            
+            make_mb_node('WetOrg', 'WET ORGANICS (LIQUID)', '#9bc2e6', ltp_org_tpd, ltp_org_dry)
+            dot.edge('ScrewPress', 'WetOrg', color='blue', penwidth='1')
+            make_mb_node('DryOrg', 'DRY MATERIAL TO RDF', '#f8cbad', rdf_org_tpd, rdf_org_dry)
+            dot.edge('ScrewPress', 'DryOrg', color='orange', penwidth='1')
+            org_node_source = 'WetOrg'
+        else:
+            ad_tpd_total = org_extracted
+            make_mb_node('Organics', 'EXTRACTED ORGANICS', '#f8cbad', org_extracted, org_extracted_dry)
+            dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
+            org_node_source = 'Organics'
+
+        # Route Organics destination
+        if 'Anaerobic Digestion (AD)' in active_destinations and ad_tpd_total > 0:
+            make_process_node('AD_Plant', 'Anaerobic Digester\n(Biogas Plant)', '#98FB98')
+            dot.edge(org_node_source, 'AD_Plant', penwidth='2')
+            if 'Biogas' in energy_output or 'Electricity' in energy_output:
+                make_process_node('Biogas', 'Biogas Output', '#FFD700', shape='ellipse')
+                dot.edge('AD_Plant', 'Biogas', color='orange')
+                if 'Electricity' in energy_output:
+                    make_process_node('AD_CHP', 'AD CHP Engine', '#FFD700')
+                    dot.edge('Biogas', 'AD_CHP', color='orange')
+        elif ad_tpd_total > 0:
+            make_process_node('Compost', 'Composting / Fertilizer', '#8FBC8F', shape='cylinder')
+            dot.edge(org_node_source, 'Compost', style='dashed')
+            
         curr_tpd, curr_dry = current_stream_totals()
 
-    if stream['Inerts']['tpd'] > 0:
-        make_mb_node('ManualSort', 'MANUAL SORTING STATION', '#fce4d6', curr_tpd, curr_dry)
+    if 'Manual Sorting (Inerts)' in active_modules and stream['Inerts']['tpd'] > 0:
+        make_mb_node('ManualSort', 'MANUAL SORTING', '#fce4d6', curr_tpd, curr_dry)
         dot.edge(spine, 'ManualSort', color='#4f81bd', penwidth='3')
         spine = 'ManualSort'
         rec_inerts = stream['Inerts']['tpd'] * (eff_manual / 100.0)
         rec_inerts_dry = stream['Inerts']['dry_tpd'] * (eff_manual / 100.0)
-        make_mb_node('Inerts', 'INERTS (STONES/GLASS)', '#f8cbad', rec_inerts, rec_inerts_dry)
-        dot.edge(spine, 'Inerts', color='#4f81bd', penwidth='2')
-        stream['Inerts']['tpd'] -= rec_inerts
-        stream['Inerts']['dry_tpd'] -= rec_inerts_dry
+        if rec_inerts > 0:
+            make_mb_node('Inerts', 'REJECTS / INERTS', '#f8cbad', rec_inerts, rec_inerts_dry)
+            dot.edge(spine, 'Inerts', color='#4f81bd', penwidth='2')
+            stream['Inerts']['tpd'] -= rec_inerts
+            stream['Inerts']['dry_tpd'] -= rec_inerts_dry
         curr_tpd, curr_dry = current_stream_totals()
 
-    if stream['Plastics']['tpd'] > 0 and 'Pyrolysis' in pref_tech:
-        make_mb_node('NIR', 'NIR (OPTICAL SORTING)', '#fff2cc', curr_tpd, curr_dry)
+    if 'NIR Optical (Plastics)' in active_modules and stream['Plastics']['tpd'] > 0:
+        make_mb_node('NIR', 'NIR OPTICAL SORTER', '#fff2cc', curr_tpd, curr_dry)
         dot.edge(spine, 'NIR', color='#4f81bd', penwidth='3')
         spine = 'NIR'
         rec_plas = stream['Plastics']['tpd'] * (eff_nir / 100.0)
         rec_plas_dry = stream['Plastics']['dry_tpd'] * (eff_nir / 100.0)
-        make_mb_node('Plastics', 'PLASTICS TO PYRO', '#f8cbad', rec_plas, rec_plas_dry)
-        dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
-        make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
-        dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
-        make_process_node('CarbonBlack', 'Carbon Black', '#A9A9A9', shape='cylinder')
-        dot.edge('Pyro_Reactor', 'CarbonBlack', style='dashed')
-        
-        if 'Fuel Oil' in energy_output or 'Electricity' in energy_output:
-            make_process_node('Fuel_Oil', 'Synthetic Fuel Oil\n(9,000 L/Day)', '#FFD700', shape='ellipse')
-            dot.edge('Pyro_Reactor', 'Fuel_Oil', color='orange')
-            if 'Electricity' in energy_output:
-                make_process_node('Pyro_CHP', 'Pyro CHP Engine\n(1.6 MW Elec)', '#FFD700')
-                dot.edge('Fuel_Oil', 'Pyro_CHP', color='orange')
+        plastic_tpd_to_pyro = rec_plas
+        if rec_plas > 0:
+            make_mb_node('Plastics', 'RECOVERED PLASTICS', '#f8cbad', rec_plas, rec_plas_dry)
+            dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
+            
+            # Route Plastics Destination
+            if 'Pyrolysis' in active_destinations:
+                make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
+                dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
+                if 'Fuel Oil' in energy_output or 'Electricity' in energy_output:
+                    make_process_node('Fuel_Oil', 'Synthetic Fuel Oil', '#FFD700', shape='ellipse')
+                    dot.edge('Pyro_Reactor', 'Fuel_Oil', color='orange')
+                    if 'Electricity' in energy_output:
+                        make_process_node('Pyro_CHP', 'Pyro CHP Engine', '#FFD700')
+                        dot.edge('Fuel_Oil', 'Pyro_CHP', color='orange')
+            else:
+                make_process_node('Baler', 'Plastic Baling for Sale', '#D3D3D3')
+                dot.edge('Plastics', 'Baler', style='dashed')
                 
-        stream['Plastics']['tpd'] -= rec_plas
-        stream['Plastics']['dry_tpd'] -= rec_plas_dry
+            stream['Plastics']['tpd'] -= rec_plas
+            stream['Plastics']['dry_tpd'] -= rec_plas_dry
         curr_tpd, curr_dry = current_stream_totals()
 
     wte_energy_data = []
     total_kcal = 0
+    final_wte_feed = 0
 
-    if curr_tpd > 0.01 and 'WtE' in pref_tech:
-        make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
-        dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
-        make_process_node('FGT', 'Flue Gas Treatment\n(4-Chamber Bag Filter)', '#D3D3D3')
-        dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
-        make_process_node('Stack', 'Emissions Stack\n(with CEMS)', '#A9A9A9', shape='triangle')
-        dot.edge('FGT', 'Stack', label='Clean Gas')
-        make_process_node('Ash', 'Bottom & Fly Ash', '#696969', shape='cylinder')
-        dot.edge('WtE', 'Ash', style='dashed')
-        dot.edge('FGT', 'Ash', style='dashed')
-        
-        if 'Electricity' in energy_output:
-            make_process_node('Turbine', 'Steam Turbine & Gen\n(3.0 MW Elec)', '#FFD700')
-            dot.edge('WtE', 'Turbine', label='Steam', color='blue')
-        
-        for name, data in stream.items():
-            tpd_to_wte = data['tpd']
-            if tpd_to_wte > 0.01:
-                if excel_mode and name in ['Food_Waste', 'Garden_Waste']:
-                    leachate_drain = tpd_to_wte * 0.15 
-                    adjusted_tpd = tpd_to_wte - leachate_drain
-                    half_tpd = adjusted_tpd / 2.0
-                    total_kcal += half_tpd * cv_org_wet
-                    wte_energy_data.append({"Material": f"{name} (WET)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_wet})
-                    total_kcal += half_tpd * cv_org_dry
-                    wte_energy_data.append({"Material": f"{name} (DRY)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_dry})
-                    continue 
+    if curr_tpd > 0.01:
+        if 'WtE Incinerator' in active_destinations:
+            final_wte_feed = curr_tpd
+            make_mb_node('WtE', 'WtE PLANT (RESIDUALS)', '#a9d18e', curr_tpd, curr_dry)
+            dot.edge(spine, 'WtE', color='#4f81bd', penwidth='4')
+            if 'Screw Press (Wet/Dry Split)' in active_modules and 'DryOrg' in [n['Process Node'] for n in mass_balance_data]:
+                dot.edge('DryOrg', 'WtE', label='Dry Organics', color='orange', style='dashed', penwidth='2')
+            
+            make_process_node('FGT', 'Flue Gas Treatment', '#D3D3D3')
+            dot.edge('WtE', 'FGT', label='Flue Gas', color='red')
+            if 'Electricity' in energy_output:
+                make_process_node('Turbine', 'Steam Turbine', '#FFD700')
+                dot.edge('WtE', 'Turbine', label='Steam', color='blue')
+            
+            for name, data in stream.items():
+                tpd_to_wte = data['tpd']
+                if tpd_to_wte > 0.01:
+                    if excel_mode and name in ['Food_Waste', 'Garden_Waste'] and 'Bag Opener (Leachate Drain)' not in active_modules:
+                        leachate_drain = tpd_to_wte * 0.15 
+                        adjusted_tpd = tpd_to_wte - leachate_drain
+                        half_tpd = adjusted_tpd / 2.0
+                        total_kcal += half_tpd * cv_org_wet
+                        wte_energy_data.append({"Material": f"{name} (WET)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_wet})
+                        total_kcal += half_tpd * cv_org_dry
+                        wte_energy_data.append({"Material": f"{name} (DRY)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_dry})
+                        continue 
 
-                component_kcal = tpd_to_wte * data['cv']
-                total_kcal += component_kcal
-                wte_energy_data.append({"Material": name.replace('_', ' '), "Tons/Day": round(tpd_to_wte, 2), "CV (Kcal/kg)": data['cv']})
+                    component_kcal = tpd_to_wte * data['cv']
+                    total_kcal += component_kcal
+                    wte_energy_data.append({"Material": name.replace('_', ' '), "Tons/Day": round(tpd_to_wte, 2), "CV (Kcal/kg)": data['cv']})
+        
+        elif 'Sanitary Landfill' in active_destinations:
+            final_wte_feed = curr_tpd
+            make_mb_node('Landfill', 'SANITARY LANDFILL', '#A9A9A9', curr_tpd, curr_dry)
+            dot.edge(spine, 'Landfill', label='Residual Waste', color='#4f81bd', penwidth='4')
+            if 'Screw Press (Wet/Dry Split)' in active_modules and 'DryOrg' in [n['Process Node'] for n in mass_balance_data]:
+                dot.edge('DryOrg', 'Landfill', color='orange', style='dashed', penwidth='2')
                 
     avg_cv_kcal = (total_kcal / curr_tpd) if curr_tpd > 0 else 0
     avg_cv_mj = avg_cv_kcal * 0.004184
 
-    return dot, mass_balance_data, wte_energy_data, avg_cv_kcal, avg_cv_mj, curr_tpd, ad_tpd_total
+    return dot, mass_balance_data, wte_energy_data, avg_cv_kcal, avg_cv_mj, final_wte_feed, ad_tpd_total, plastic_tpd_to_pyro
 
-diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total = run_mass_balance()
+diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total, plastic_tpd_to_pyro = run_universal_mass_balance()
 
 if total_input_pct > 100.1 or total_input_pct < 99.9:
     st.warning(f"⚠️ **Note:** Your composition adds up to {total_input_pct:.2f}%. Ideally it should equal exactly 100%.")
@@ -323,14 +409,22 @@ with tab1:
         st.info("💡 **Calorific Value (CV):** This section proves to the engineers that the final residual garbage entering the incinerator has enough heat energy to sustain a fire and spin the steam turbine without needing auxiliary fuel.")
     
     colA, colB, colC = st.columns(3)
-    colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
-    colB.metric("Average CV (Kcal/kg)", f"{avg_cv_kcal:,.0f} Kcal/kg")
-    colC.metric("Average CV (MJ/kg)", f"{avg_cv_mj:.2f} MJ/kg")
+    if 'WtE Incinerator' in active_destinations:
+        colA.metric("Total Waste to WtE", f"{final_wte_tpd:.2f} TPD")
+        colB.metric("Average CV (Kcal/kg)", f"{avg_cv_kcal:,.0f} Kcal/kg")
+        colC.metric("Average CV (MJ/kg)", f"{avg_cv_mj:.2f} MJ/kg")
+    else:
+        colA.metric("Total Waste to Landfill", f"{final_wte_tpd:.2f} TPD")
+        colB.metric("Organics Diverted", f"{ad_tpd_total:.2f} TPD")
+        colC.metric("Plastics Diverted", f"{plastic_tpd_to_pyro:.2f} TPD")
 
     col_table1, col_table2 = st.columns(2)
     with col_table1:
-        st.markdown("**WtE Residual Makeup**")
-        st.dataframe(pd.DataFrame(wte_data), use_container_width=True)
+        if len(wte_data) > 0 and 'WtE Incinerator' in active_destinations:
+            st.markdown("**WtE Residual Makeup**")
+            st.dataframe(pd.DataFrame(wte_data), use_container_width=True)
+        else:
+            st.info("WtE Incinerator is off. Residuals sent to Landfill.")
     with col_table2:
         st.markdown("**Overall Mass Balance Data**")
         df_mb = pd.DataFrame(mb_data)
@@ -343,18 +437,18 @@ with tab2:
         
     # --- THE NEW EXCEL MATCH TOGGLE ---
     match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
-    
-    plastic_tpd_to_pyro = 0
-    for item in mb_data: 
-        if item["Process Node"] == 'PLASTICS TO PYRO':
-            plastic_tpd_to_pyro = item["Tons/Day"]
 
     if match_excel_co2:
         st.warning("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
         
         lf_tpd = capacity_tpd * (313.22 / 350.0) 
-        plant_leachate = capacity_tpd * 0.15
-        wte_tpd = max(0, final_wte_tpd - plant_leachate)
+        
+        # Determine if we need to do the ghost drain or if the module already extracted it
+        wte_tpd = final_wte_tpd
+        if 'Bag Opener (Leachate Drain)' not in active_modules:
+            plant_leachate = capacity_tpd * 0.15
+            wte_tpd = max(0, final_wte_tpd - plant_leachate)
+            
         ad_tpd = ad_tpd_total
         ptf_tpd = plastic_tpd_to_pyro
         bio_tpd = ad_tpd * (15.744 / 146.048) if ad_tpd > 0 else 0
@@ -504,4 +598,3 @@ with tab2:
             * **Pyrolysis Plant:** 20 TPD generating 9,000 Liters of oil and 1.6 MW (Page 5)
             * **WtE Plant:** 120 TPD generating approx. 3.0 MW (Page 5)
             """)
-
