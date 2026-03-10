@@ -8,7 +8,7 @@ import os
 # ==========================================
 st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
 st.title("⚙️ Universal Waste-to-Energy Plant Designer")
-st.markdown("Universal mass balance routing with downstream process systems, an interactive Calorific Value (CV) toggle, and Environmental Impact modeling.")
+st.markdown("Universal mass balance routing with downstream process systems, interactive Dry/Wet tracking, and Environmental Impact modeling.")
 
 # ==========================================
 # UI: SIDEBAR INPUTS
@@ -27,13 +27,9 @@ if tutorial_mode:
 st.sidebar.divider()
 
 st.sidebar.header("1. Operational Input")
-if tutorial_mode:
-    st.sidebar.info("💡 **Plant Capacity:** This is the master scale for the whole plant. Changing this recalculates the TPD (Tons Per Day) for every single machine downstream.")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
 excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True)
-if tutorial_mode:
-    st.sidebar.info("💡 **Excel Override:** When ON, this forces the WtE math to simulate a 15% leachate drain and a 50/50 wet/dry organic split to perfectly match the target baseline engineering spreadsheet.")
 
 st.sidebar.header("2. Build Your Architecture")
 if tutorial_mode:
@@ -74,8 +70,6 @@ energy_output = st.sidebar.multiselect(
 
 # --- EXPANDER 3: COMPOSITION ---
 with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
-    if tutorial_mode:
-        st.info("💡 **Waste Profile:** Adjust these percentages based on municipal waste studies. Changing the amount of plastics or food waste will completely alter the energy output and carbon footprint of the plant.")
     col1, col2 = st.columns(2)
     with col1:
         food_waste = st.number_input("Food Waste", value=51.27, step=0.1)
@@ -94,8 +88,6 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
-    if tutorial_mode:
-        st.info("💡 **Equipment Sorting:** No machine is 100% perfect. For example, if you lower the NIR Sorter efficiency to 37%, it proves that some plastic slips past the cameras and ends up burning in the WtE incinerator instead of going to Pyrolysis.")
     eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
     eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) if 'NIR Optical (Plastics)' in active_modules else 0
     eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) if 'Trommel Screen (Organics)' in active_modules else 0
@@ -106,8 +98,6 @@ with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
 
 # --- EXPANDER 5: MOISTURE & CV DATA ---
 with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
-    if tutorial_mode:
-        st.info("💡 **Thermodynamics:** These numbers dictate how much water is in the garbage and how much heat it produces when burned. These are highly technical values that dictate the final Steam Turbine output.")
     st.markdown("*Moisture Content (% Dry Material)*")
     dry_food = st.number_input("Food Dry %", value=15.0) / 100.0
     dry_garden = st.number_input("Garden Dry %", value=15.0) / 100.0
@@ -162,7 +152,6 @@ def run_universal_mass_balance():
     ad_tpd_total = 0 
     plastic_tpd_to_pyro = 0
 
-    # Build initial active streams
     stream = {}
     for name, props in materials.items():
         tpd = (props['pct'] / 100.0) * capacity_tpd
@@ -181,6 +170,8 @@ def run_universal_mass_balance():
         dry_pct = (dry_tpd / tpd) * 100.0 if tpd > 0 else 0
         wet_pct = 100.0 - dry_pct
         mass_balance_data.append({"Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0), "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"})
+        
+        # HTML tables break if ampersands are not escaped. Do not use '&' in title.
         html = f"""<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
             <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
@@ -200,15 +191,20 @@ def run_universal_mass_balance():
 
     # --- DYNAMIC ROUTING ---
     if 'Bag Opener (Leachate Drain)' in active_modules:
-        make_mb_node('BagOpener', 'BAG OPENER & DRAIN', '#e2efda', curr_tpd, curr_dry)
+        make_mb_node('BagOpener', 'BAG OPENER AND DRAIN', '#e2efda', curr_tpd, curr_dry)
         dot.edge(spine, 'BagOpener', color='#4f81bd', penwidth='3')
         spine = 'BagOpener'
         leachate_tpd = capacity_tpd * (eff_bag_leachate / 100.0)
+        
         # Deduct water proportionally from Food and Garden wet mass to preserve their dry mass
-        org_wet = stream['Food_Waste']['tpd'] + stream['Garden_Waste']['tpd']
-        if org_wet > 0 and leachate_tpd <= org_wet:
-            stream['Food_Waste']['tpd'] -= leachate_tpd * (stream['Food_Waste']['tpd']/org_wet)
-            stream['Garden_Waste']['tpd'] -= leachate_tpd * (stream['Garden_Waste']['tpd']/org_wet)
+        fw_water = stream['Food_Waste']['tpd'] - stream['Food_Waste']['dry_tpd']
+        gw_water = stream['Garden_Waste']['tpd'] - stream['Garden_Waste']['dry_tpd']
+        org_wet_water = fw_water + gw_water
+        
+        if org_wet_water > 0 and leachate_tpd <= org_wet_water:
+            stream['Food_Waste']['tpd'] -= leachate_tpd * (fw_water / org_wet_water)
+            stream['Garden_Waste']['tpd'] -= leachate_tpd * (gw_water / org_wet_water)
+            
         if leachate_tpd > 0:
             make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) # 0 dry mass
             dot.edge(spine, 'Leachate', color='#4f81bd', penwidth='2')
@@ -282,7 +278,6 @@ def run_universal_mass_balance():
             dot.edge(spine, 'Organics', color='#4f81bd', penwidth='2')
             org_node_source = 'Organics'
 
-        # Route Organics destination
         if 'Anaerobic Digestion (AD)' in active_destinations and ad_tpd_total > 0:
             make_process_node('AD_Plant', 'Anaerobic Digester\n(Biogas Plant)', '#98FB98')
             dot.edge(org_node_source, 'AD_Plant', penwidth='2')
@@ -322,7 +317,6 @@ def run_universal_mass_balance():
             make_mb_node('Plastics', 'RECOVERED PLASTICS', '#f8cbad', rec_plas, rec_plas_dry)
             dot.edge(spine, 'Plastics', color='#4f81bd', penwidth='2')
             
-            # Route Plastics Destination
             if 'Pyrolysis' in active_destinations:
                 make_process_node('Pyro_Reactor', 'Pyrolysis Reactor\n& Condenser', '#DDA0DD')
                 dot.edge('Plastics', 'Pyro_Reactor', penwidth='2')
@@ -399,14 +393,10 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
-    if tutorial_mode:
-        st.info("💡 **Graphviz Engine:** This flow diagram generates automatically in real-time. If you change the Plant Capacity to 500 in the sidebar, watch the 'Tons/Day' metrics inside these boxes instantly update.")
     st.graphviz_chart(diagram, use_container_width=True)
     st.divider()
     
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
-    if tutorial_mode:
-        st.info("💡 **Calorific Value (CV):** This section proves to the engineers that the final residual garbage entering the incinerator has enough heat energy to sustain a fire and spin the steam turbine without needing auxiliary fuel.")
     
     colA, colB, colC = st.columns(3)
     if 'WtE Incinerator' in active_destinations:
@@ -432,8 +422,6 @@ with tab1:
 
 with tab2:
     st.subheader("🌍 Environmental & CO2e Reduction Models")
-    if tutorial_mode:
-        st.info("💡 **Environmental Models:** This tab runs complex greenhouse gas physics. You can either use dynamic, real-world IPCC physics, or force the app to match a legacy flat-multiplier spreadsheet.")
         
     # --- THE NEW EXCEL MATCH TOGGLE ---
     match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
@@ -496,9 +484,6 @@ with tab2:
         with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
         with t_col2: calc_pyro = st.toggle("🟣 Include Pyrolysis Emissions", value=True)
         with t_col3: calc_wte = st.toggle("🔴 Include WtE Emissions", value=True)
-
-        if tutorial_mode:
-            st.info("💡 **Subsystem Toggles:** If you want to see exactly how much carbon *just* the AD plant saves, turn off the Pyrolysis and WtE switches. The Grand Total will instantly recalculate.")
 
         total_ad_co2 = 0
         total_pyro_co2 = 0
@@ -585,16 +570,3 @@ with tab2:
             w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
             w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
             w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
-
-        st.divider()
-        with st.expander("📐 View Sample Calculations & Engineering References"):
-            if tutorial_mode:
-                st.info("💡 **Documentation:** This section proves that your math isn't just a guess. It cites the specific formulas and page numbers used to build the tool.")
-            st.markdown("""
-            ### Document Baseline References
-            All primary equipment assumptions are derived directly from the **HSSI-Isabela Preliminary Techno Commercial Proposal (Nov 2025)**:
-            * **Total Capacity:** 350 TPD (Page 3)
-            * **AD Plant:** 150 TPD generating approx. 1.4 MW (Page 5)
-            * **Pyrolysis Plant:** 20 TPD generating 9,000 Liters of oil and 1.6 MW (Page 5)
-            * **WtE Plant:** 120 TPD generating approx. 3.0 MW (Page 5)
-            """)
