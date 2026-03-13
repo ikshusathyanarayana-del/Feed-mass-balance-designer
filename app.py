@@ -171,6 +171,7 @@ def run_universal_mass_balance():
         wet_pct = 100.0 - dry_pct
         mass_balance_data.append({"Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0), "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"})
         
+        # HTML tables break if ampersands are not escaped. Do not use '&' in title.
         html = f"""<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
             <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
@@ -188,12 +189,6 @@ def run_universal_mass_balance():
     make_mb_node('Reception', 'RECEPTION OF MATERIAL', '#c5e0b4', curr_tpd, curr_dry)
     spine = 'Reception'
 
-    # --- INJECT LOGO INTO THE GRAPHVIZ DIAGRAM ---
-    logo_file = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
-    if logo_file:
-        dot.node('CompanyLogo', label='', image=logo_file, shape='rect', color='white', imagescale='true', width='2.5', height='1.0')
-        dot.body.append('{ rank=same; "Reception"; "CompanyLogo" }')
-
     # --- DYNAMIC ROUTING ---
     if 'Bag Opener (Leachate Drain)' in active_modules:
         make_mb_node('BagOpener', 'BAG OPENER AND DRAIN', '#e2efda', curr_tpd, curr_dry)
@@ -201,6 +196,7 @@ def run_universal_mass_balance():
         spine = 'BagOpener'
         leachate_tpd = capacity_tpd * (eff_bag_leachate / 100.0)
         
+        # Deduct water proportionally from Food and Garden wet mass to preserve their dry mass
         fw_water = stream['Food_Waste']['tpd'] - stream['Food_Waste']['dry_tpd']
         gw_water = stream['Garden_Waste']['tpd'] - stream['Garden_Waste']['dry_tpd']
         org_wet_water = fw_water + gw_water
@@ -210,7 +206,7 @@ def run_universal_mass_balance():
             stream['Garden_Waste']['tpd'] -= leachate_tpd * (gw_water / org_wet_water)
             
         if leachate_tpd > 0:
-            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) 
+            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) # 0 dry mass
             dot.edge(spine, 'Leachate', color='#4f81bd', penwidth='2')
         curr_tpd, curr_dry = current_stream_totals()
 
@@ -398,17 +394,6 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
     st.graphviz_chart(diagram, use_container_width=True)
-    
-    # --- DOWNLOAD BUTTON CODE INJECTED HERE ---
-    img_bytes = diagram.pipe(format='png')
-    st.download_button(
-        label="📥 Download Official Flowchart (PNG)",
-        data=img_bytes,
-        file_name="Mutiara_Etnik_Mass_Balance.png",
-        mime="image/png"
-    )
-    # -------------------------------------------
-    
     st.divider()
     
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
