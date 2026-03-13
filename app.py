@@ -394,6 +394,17 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
     st.graphviz_chart(diagram, use_container_width=True)
+    
+    # --- DOWNLOAD BUTTON INJECTED HERE ---
+    img_bytes = diagram.pipe(format='png')
+    st.download_button(
+        label="📥 Download Flowchart (PNG)",
+        data=img_bytes,
+        file_name="Mass_Balance_Flowchart.png",
+        mime="image/png"
+    )
+    # -------------------------------------
+
     st.divider()
     
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
