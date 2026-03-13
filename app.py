@@ -185,9 +185,20 @@ def run_universal_mass_balance():
     def current_stream_totals():
         return sum(s['tpd'] for s in stream.values()), sum(s['dry_tpd'] for s in stream.values())
 
-    curr_tpd, curr_dry = current_stream_totals()
+   curr_tpd, curr_dry = current_stream_totals()
     make_mb_node('Reception', 'RECEPTION OF MATERIAL', '#c5e0b4', curr_tpd, curr_dry)
     spine = 'Reception'
+
+    # --- INJECT LOGO INTO THE GRAPHVIZ DIAGRAM ---
+    logo_file = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
+    if logo_file:
+        # Create an invisible box containing the logo, scaled to fit neatly
+        dot.node('CompanyLogo', label='', image=logo_file, shape='rect', color='white', imagescale='true', width='2.5', height='1.0')
+        # Force the Logo and the Reception node to sit on the top row together
+        dot.body.append('{ rank=same; "Reception"; "CompanyLogo" }')
+
+    # --- DYNAMIC ROUTING ---
+    if 'Bag Opener (Leachate Drain)' in active_modules:
 
     # --- DYNAMIC ROUTING ---
     if 'Bag Opener (Leachate Drain)' in active_modules:
@@ -570,3 +581,4 @@ with tab2:
             w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
             w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
             w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
+
