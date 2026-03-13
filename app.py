@@ -4,27 +4,22 @@ import pandas as pd
 import os
 
 # ==========================================
-# PAGE CONFIGURATION & HEADER
+# PAGE CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="Universal FEED Designer", layout="wide")
-
-header_col1, header_col2 = st.columns([4, 1])
-
-with header_col1:
-    st.title("⚙️ Universal Waste-to-Energy Plant Designer")
-    st.markdown("Universal mass balance routing with downstream process systems, interactive Dry/Wet tracking, and Environmental Impact modeling.")
-
-with header_col2:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", use_container_width=True)
-    else:
-        st.markdown("*(Upload logo.png here)*")
+st.set_page_config(page_title="Dynamic FEED Designer", layout="wide")
+st.title("⚙️ Universal Waste-to-Energy Plant Designer")
+st.markdown("Universal mass balance routing with downstream process systems, interactive Dry/Wet tracking, and Environmental Impact modeling.")
 
 # ==========================================
 # UI: SIDEBAR INPUTS
 # ==========================================
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+else:
+    st.sidebar.markdown("*(Upload a 'logo.png' or 'logo.jpg' to GitHub to display your company logo here)*")
+
 st.sidebar.divider()
 tutorial_mode = st.sidebar.toggle("🎓 Enable Tutorial / Guide Mode", value=False)
 if tutorial_mode:
@@ -32,11 +27,14 @@ if tutorial_mode:
 st.sidebar.divider()
 
 st.sidebar.header("1. Operational Input")
-capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=300, step=10)
+capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
 excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True)
 
 st.sidebar.header("2. Build Your Architecture")
+if tutorial_mode:
+    st.sidebar.info("💡 **Universal Routing:** Add or remove machines here. The mass balance engine will automatically rewire the flowchart and route the garbage accordingly.")
+
 active_modules = st.sidebar.multiselect(
     "Active Sorting Modules",
     options=[
@@ -74,25 +72,25 @@ energy_output = st.sidebar.multiselect(
 with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
-        food_waste = st.number_input("Food Waste", value=25.16, step=0.1)
-        garden_waste = st.number_input("Garden Waste", value=0.0, step=0.1)
-        plastics = st.number_input("Plastics", value=19.69, step=0.1)
-        paper = st.number_input("Paper & Cardboard", value=0.0, step=0.1)
-        textile = st.number_input("Textile", value=0.0, step=0.1)
-        pampers = st.number_input("Pampers", value=0.0, step=0.1)
+        food_waste = st.number_input("Food Waste", value=51.27, step=0.1)
+        garden_waste = st.number_input("Garden Waste", value=15.89, step=0.1)
+        plastics = st.number_input("Plastics", value=15.54, step=0.1)
+        paper = st.number_input("Paper & Cardboard", value=6.73, step=0.1)
+        textile = st.number_input("Textile", value=2.04, step=0.1)
+        pampers = st.number_input("Pampers", value=4.10, step=0.1)
     with col2:
-        wood = st.number_input("Wood Products", value=0.0, step=0.1)
-        inerts = st.number_input("Inerts (Stones/Glass)", value=2.72, step=0.1)
-        ferrous = st.number_input("Metals (Ferrous)", value=1.10, step=0.1)
-        non_ferrous = st.number_input("Metals (Non-Ferrous)", value=0.0, step=0.1)
-        others = st.number_input("Others Components", value=51.33, step=0.1)
+        wood = st.number_input("Wood Products", value=0.18, step=0.1)
+        inerts = st.number_input("Inerts (Stones/Glass)", value=1.79, step=0.1)
+        ferrous = st.number_input("Metals (Ferrous)", value=0.60, step=0.1)
+        non_ferrous = st.number_input("Metals (Non-Ferrous)", value=0.38, step=0.1)
+        others = st.number_input("Others Components", value=1.48, step=0.1)
         rubber = st.number_input("Rubber", value=0.00, step=0.1)
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
     eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
-    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) if 'NIR Optical (Plastics)' in active_modules else 0
-    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 80) if 'Trommel Screen (Organics)' in active_modules else 0
+    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) if 'NIR Optical (Plastics)' in active_modules else 0
+    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) if 'Trommel Screen (Organics)' in active_modules else 0
     screw_press_solid = st.slider("Screw Press Solid Yield (%)", 0, 100, 40) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100) if 'Magnetic Separator (Ferrous)' in active_modules else 0
     eff_eddy = st.slider("Eddy Current (Non-Ferrous)", 0, 100, 100) if 'Eddy Current (Non-Ferrous)' in active_modules else 0
@@ -101,7 +99,7 @@ with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
 # --- EXPANDER 5: MOISTURE & CV DATA ---
 with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
     st.markdown("*Moisture Content (% Dry Material)*")
-    dry_food = st.number_input("Food Dry %", value=20.0) / 100.0
+    dry_food = st.number_input("Food Dry %", value=15.0) / 100.0
     dry_garden = st.number_input("Garden Dry %", value=15.0) / 100.0
     dry_plastics = st.number_input("Plastics Dry %", value=100.0) / 100.0
     dry_paper = st.number_input("Paper Dry %", value=80.0) / 100.0
@@ -147,6 +145,8 @@ materials = {
     'Rubber': {'pct': rubber, 'dry_frac': dry_rubber, 'cv': cv_rubber}
 }
 
+total_input_pct = sum(m['pct'] for m in materials.values())
+
 def run_universal_mass_balance():
     DAYS_PER_YEAR = 330
     ad_tpd_total = 0 
@@ -171,6 +171,7 @@ def run_universal_mass_balance():
         wet_pct = 100.0 - dry_pct
         mass_balance_data.append({"Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0), "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"})
         
+        # HTML tables break if ampersands are not escaped. Do not use '&' in title.
         html = f"""<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
             <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
@@ -188,12 +189,6 @@ def run_universal_mass_balance():
     make_mb_node('Reception', 'RECEPTION OF MATERIAL', '#c5e0b4', curr_tpd, curr_dry)
     spine = 'Reception'
 
-    # --- INJECT LOGO INTO THE GRAPHVIZ DIAGRAM ---
-    logo_file = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
-    if logo_file:
-        dot.node('CompanyLogo', label='', image=logo_file, shape='rect', color='white', imagescale='true', width='2.5', height='1.0')
-        dot.body.append('{ rank=same; "Reception"; "CompanyLogo" }')
-
     # --- DYNAMIC ROUTING ---
     if 'Bag Opener (Leachate Drain)' in active_modules:
         make_mb_node('BagOpener', 'BAG OPENER AND DRAIN', '#e2efda', curr_tpd, curr_dry)
@@ -201,6 +196,7 @@ def run_universal_mass_balance():
         spine = 'BagOpener'
         leachate_tpd = capacity_tpd * (eff_bag_leachate / 100.0)
         
+        # Deduct water proportionally from Food and Garden wet mass to preserve their dry mass
         fw_water = stream['Food_Waste']['tpd'] - stream['Food_Waste']['dry_tpd']
         gw_water = stream['Garden_Waste']['tpd'] - stream['Garden_Waste']['dry_tpd']
         org_wet_water = fw_water + gw_water
@@ -210,7 +206,7 @@ def run_universal_mass_balance():
             stream['Garden_Waste']['tpd'] -= leachate_tpd * (gw_water / org_wet_water)
             
         if leachate_tpd > 0:
-            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0)
+            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) # 0 dry mass
             dot.edge(spine, 'Leachate', color='#4f81bd', penwidth='2')
         curr_tpd, curr_dry = current_stream_totals()
 
@@ -387,6 +383,9 @@ def run_universal_mass_balance():
 
 diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total, plastic_tpd_to_pyro = run_universal_mass_balance()
 
+if total_input_pct > 100.1 or total_input_pct < 99.9:
+    st.warning(f"⚠️ **Note:** Your composition adds up to {total_input_pct:.2f}%. Ideally it should equal exactly 100%.")
+
 # ==========================================
 # UI: TABS LAYOUT
 # ==========================================
@@ -395,15 +394,6 @@ tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
     st.graphviz_chart(diagram, use_container_width=True)
-    
-    img_bytes = diagram.pipe(format='png')
-    st.download_button(
-        label="📥 Download Official Flowchart (PNG)",
-        data=img_bytes,
-        file_name="Mutiara_Etnik_Mass_Balance.png",
-        mime="image/png"
-    )
-    
     st.divider()
     
     st.subheader("🔥 WtE Energy & Calorific Value Analysis")
@@ -433,6 +423,7 @@ with tab1:
 with tab2:
     st.subheader("🌍 Environmental & CO2e Reduction Models")
         
+    # --- THE NEW EXCEL MATCH TOGGLE ---
     match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
 
     if match_excel_co2:
@@ -440,6 +431,7 @@ with tab2:
         
         lf_tpd = capacity_tpd * (313.22 / 350.0) 
         
+        # Determine if we need to do the ghost drain or if the module already extracted it
         wte_tpd = final_wte_tpd
         if 'Bag Opener (Leachate Drain)' not in active_modules:
             plant_leachate = capacity_tpd * 0.15
@@ -486,6 +478,7 @@ with tab2:
         st.dataframe(pd.DataFrame(excel_data), use_container_width=True)
         
     else:
+        # --- STANDARD DYNAMIC IPCC MATH ---
         st.markdown("Toggle the subsystems below to instantly calculate your combined Greenhouse Gas (GHG) offsets independent of the main plant layout.")
         t_col1, t_col2, t_col3 = st.columns(3)
         with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
