@@ -47,7 +47,6 @@ active_modules = st.sidebar.multiselect(
         'NIR Optical (Plastics)'
     ],
     default=[
-        'Bag Opener (Leachate Drain)',
         'Magnetic Separator (Ferrous)',
         'Trommel Screen (Organics)',
         'Screw Press (Wet/Dry Split)',
@@ -56,16 +55,19 @@ active_modules = st.sidebar.multiselect(
     ]
 )
 
+# NEW: Universal routing toggle for Garden Waste
+route_garden_to_ad = st.sidebar.toggle("🍃 Route Garden Waste to Organics (AD)", value=False, help="If OFF, Garden Waste bypasses the Trommel and goes directly to the residual pile (WtE/Landfill). Turn OFF to match Palawan Excel logic.")
+
 active_destinations = st.sidebar.multiselect(
     "Downstream Energy / Disposal",
     options=['Anaerobic Digestion (AD)', 'Pyrolysis', 'WtE Incinerator', 'Sanitary Landfill'],
-    default=['Anaerobic Digestion (AD)', 'Pyrolysis', 'WtE Incinerator']
+    default=['Anaerobic Digestion (AD)', 'WtE Incinerator']
 )
 
 energy_output = st.sidebar.multiselect(
     "Desired Energy Output",
     options=['Electricity', 'Biogas', 'Fuel Oil'],
-    default=['Electricity', 'Biogas', 'Fuel Oil']
+    default=['Electricity', 'Biogas']
 )
 
 # --- EXPANDER 3: COMPOSITION ---
@@ -88,10 +90,12 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
+    st.markdown("*Set to 100% to match perfect theoretical Excel models.*")
     eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
-    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 37) if 'NIR Optical (Plastics)' in active_modules else 0
-    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 62) if 'Trommel Screen (Organics)' in active_modules else 0
-    screw_press_solid = st.slider("Screw Press Solid Yield (%)", 0, 100, 40) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
+    eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) if 'NIR Optical (Plastics)' in active_modules else 0
+    eff_trommel = st.slider("Trommel (Organics)", 0, 100, 100) if 'Trommel Screen (Organics)' in active_modules else 0
+    # Changed to number input for precise fractional matching (e.g. 18.61% for Palawan)
+    screw_press_solid = st.number_input("Screw Press Solid Yield (%)", min_value=0.0, max_value=100.0, value=18.61, step=0.1) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100) if 'Magnetic Separator (Ferrous)' in active_modules else 0
     eff_eddy = st.slider("Eddy Current (Non-Ferrous)", 0, 100, 100) if 'Eddy Current (Non-Ferrous)' in active_modules else 0
     eff_manual = st.slider("Manual Sorting (Inerts)", 0, 100, 100) if 'Manual Sorting (Inerts)' in active_modules else 0
@@ -171,7 +175,6 @@ def run_universal_mass_balance():
         wet_pct = 100.0 - dry_pct
         mass_balance_data.append({"Process Node": title, "Tons/Day": round(tpd, 2), "Tons/Year": round(tpy, 0), "% Dry": f"{dry_pct:.2f}%", "% Wet": f"{wet_pct:.2f}%"})
         
-        # HTML tables break if ampersands are not escaped. Do not use '&' in title.
         html = f"""<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
             <TR><TD COLSPAN="4" BGCOLOR="{bgcolor}"><B>{title}</B></TD></TR>
             <TR><TD>{pct_total:.2f}%</TD><TD>{tpy:,.0f} Tons/Year</TD><TD>Dry Material:</TD><TD>Wet :</TD></TR>
@@ -196,7 +199,6 @@ def run_universal_mass_balance():
         spine = 'BagOpener'
         leachate_tpd = capacity_tpd * (eff_bag_leachate / 100.0)
         
-        # Deduct water proportionally from Food and Garden wet mass to preserve their dry mass
         fw_water = stream['Food_Waste']['tpd'] - stream['Food_Waste']['dry_tpd']
         gw_water = stream['Garden_Waste']['tpd'] - stream['Garden_Waste']['dry_tpd']
         org_wet_water = fw_water + gw_water
@@ -206,7 +208,7 @@ def run_universal_mass_balance():
             stream['Garden_Waste']['tpd'] -= leachate_tpd * (gw_water / org_wet_water)
             
         if leachate_tpd > 0:
-            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) # 0 dry mass
+            make_mb_node('Leachate', 'WASTEWATER / LEACHATE', '#9bc2e6', leachate_tpd, 0) 
             dot.edge(spine, 'Leachate', color='#4f81bd', penwidth='2')
         curr_tpd, curr_dry = current_stream_totals()
 
@@ -236,7 +238,11 @@ def run_universal_mass_balance():
             stream['Non_Ferrous']['dry_tpd'] -= rec_nf_dry
         curr_tpd, curr_dry = current_stream_totals()
 
-    org_tpd = stream['Food_Waste']['tpd'] + stream['Garden_Waste']['tpd']
+    # DYNAMIC ORGANICS SOURCING
+    org_tpd = stream['Food_Waste']['tpd']
+    if route_garden_to_ad:
+        org_tpd += stream['Garden_Waste']['tpd']
+
     if 'Trommel Screen (Organics)' in active_modules and org_tpd > 0:
         make_mb_node('Trommel', 'TROMMEL SCREEN', '#e2efda', curr_tpd, curr_dry)
         dot.edge(spine, 'Trommel', color='#4f81bd', penwidth='3')
@@ -244,16 +250,20 @@ def run_universal_mass_balance():
         
         ext_food = stream['Food_Waste']['tpd'] * (eff_trommel / 100.0)
         ext_food_dry = stream['Food_Waste']['dry_tpd'] * (eff_trommel / 100.0)
-        ext_garden = stream['Garden_Waste']['tpd'] * (eff_trommel / 100.0)
-        ext_garden_dry = stream['Garden_Waste']['dry_tpd'] * (eff_trommel / 100.0)
+        
+        ext_garden = 0
+        ext_garden_dry = 0
+        if route_garden_to_ad:
+            ext_garden = stream['Garden_Waste']['tpd'] * (eff_trommel / 100.0)
+            ext_garden_dry = stream['Garden_Waste']['dry_tpd'] * (eff_trommel / 100.0)
+            stream['Garden_Waste']['tpd'] -= ext_garden
+            stream['Garden_Waste']['dry_tpd'] -= ext_garden_dry
+            
+        stream['Food_Waste']['tpd'] -= ext_food
+        stream['Food_Waste']['dry_tpd'] -= ext_food_dry
         
         org_extracted = ext_food + ext_garden
         org_extracted_dry = ext_food_dry + ext_garden_dry
-        
-        stream['Food_Waste']['tpd'] -= ext_food
-        stream['Food_Waste']['dry_tpd'] -= ext_food_dry
-        stream['Garden_Waste']['tpd'] -= ext_garden
-        stream['Garden_Waste']['dry_tpd'] -= ext_garden_dry
         
         if 'Screw Press (Wet/Dry Split)' in active_modules:
             make_mb_node('ScrewPress', 'ORGANICS SCREW PRESS', '#ffe699', org_extracted, org_extracted_dry)
@@ -355,7 +365,6 @@ def run_universal_mass_balance():
             for name, data in stream.items():
                 tpd_to_wte = data['tpd']
                 if tpd_to_wte > 0.01:
-                    # UPDATED EXCEL MODE LOGIC: Dynamic Dry/Wet Split & Float Support
                     if excel_mode and name in ['Food_Waste', 'Garden_Waste'] and 'Bag Opener (Leachate Drain)' not in active_modules:
                         leachate_drain = tpd_to_wte * 0.15 
                         adjusted_tpd = tpd_to_wte - leachate_drain
