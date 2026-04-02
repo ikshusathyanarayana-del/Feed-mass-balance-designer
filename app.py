@@ -113,19 +113,19 @@ with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
     dry_rubber = st.number_input("Rubber Dry %", value=60.0) / 100.0
     
     st.markdown("*Calorific Values (Kcal/kg)*")
-    cv_paper = st.number_input("Paper & Cardboard CV", value=3585, step=100)
-    cv_plastics = st.number_input("Plastics CV", value=3300, step=100)
-    cv_wood = st.number_input("Wood CV", value=3100, step=100)
-    cv_textile = st.number_input("Textile CV", value=3872, step=100)
-    cv_pampers = st.number_input("Pampers CV", value=1840, step=100)
-    cv_rubber = st.number_input("Rubber CV", value=2400, step=100)
-    cv_others = st.number_input("Others CV", value=3200, step=100)
-    cv_inerts = 0
-    cv_ferrous = 0
-    cv_non_ferrous = 0
-    cv_org_wet = st.number_input("Organic - WET", value=526, step=10)
-    cv_org_dry = st.number_input("Organic - DRY", value=2629, step=10)
-    cv_food = st.number_input("Organic - Base (Standard)", value=1200, step=100)
+    cv_paper = st.number_input("Paper & Cardboard CV", value=3585.0, format="%.2f")
+    cv_plastics = st.number_input("Plastics CV", value=3300.0, format="%.2f")
+    cv_wood = st.number_input("Wood CV", value=3100.0, format="%.2f")
+    cv_textile = st.number_input("Textile CV", value=3871.89, format="%.2f")
+    cv_pampers = st.number_input("Pampers CV", value=1840.34, format="%.2f")
+    cv_rubber = st.number_input("Rubber CV", value=2400.0, format="%.2f")
+    cv_others = st.number_input("Others CV", value=3200.0, format="%.2f")
+    cv_inerts = 0.0
+    cv_ferrous = 0.0
+    cv_non_ferrous = 0.0
+    cv_org_wet = st.number_input("Organic - WET", value=526.0, format="%.2f")
+    cv_org_dry = st.number_input("Organic - DRY", value=2629.0, format="%.2f")
+    cv_food = st.number_input("Organic - Base (Standard)", value=1200.0, format="%.2f")
 
 # ==========================================
 # DATA COMPILATION & UNIVERSAL MASS BALANCE ENGINE
@@ -156,7 +156,7 @@ def run_universal_mass_balance():
     for name, props in materials.items():
         tpd = (props['pct'] / 100.0) * capacity_tpd
         dry_tpd = tpd * props['dry_frac']
-        stream[name] = {'tpd': tpd, 'dry_tpd': dry_tpd, 'cv': props['cv']}
+        stream[name] = {'tpd': tpd, 'dry_tpd': dry_tpd, 'cv': props['cv'], 'dry_frac': props['dry_frac']}
 
     dot = graphviz.Digraph(comment='Universal Hybrid Mass Balance', format='png')
     dot.attr(rankdir='TB', nodesep='0.6', ranksep='0.8')
@@ -265,7 +265,7 @@ def run_universal_mass_balance():
             ltp_org_dry = org_extracted_dry - rdf_org_dry
             
             ad_tpd_total = ltp_org_tpd
-            stream['Screw_Press_Dry'] = {'tpd': rdf_org_tpd, 'dry_tpd': rdf_org_dry, 'cv': cv_org_dry}
+            stream['Screw_Press_Dry'] = {'tpd': rdf_org_tpd, 'dry_tpd': rdf_org_dry, 'cv': cv_org_dry, 'dry_frac': 1.0}
             
             make_mb_node('WetOrg', 'WET ORGANICS (LIQUID)', '#9bc2e6', ltp_org_tpd, ltp_org_dry)
             dot.edge('ScrewPress', 'WetOrg', color='blue', penwidth='1')
@@ -355,19 +355,27 @@ def run_universal_mass_balance():
             for name, data in stream.items():
                 tpd_to_wte = data['tpd']
                 if tpd_to_wte > 0.01:
+                    # UPDATED EXCEL MODE LOGIC: Dynamic Dry/Wet Split & Float Support
                     if excel_mode and name in ['Food_Waste', 'Garden_Waste'] and 'Bag Opener (Leachate Drain)' not in active_modules:
                         leachate_drain = tpd_to_wte * 0.15 
                         adjusted_tpd = tpd_to_wte - leachate_drain
-                        half_tpd = adjusted_tpd / 2.0
-                        total_kcal += half_tpd * cv_org_wet
-                        wte_energy_data.append({"Material": f"{name} (WET)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_wet})
-                        total_kcal += half_tpd * cv_org_dry
-                        wte_energy_data.append({"Material": f"{name} (DRY)", "Tons/Day": round(half_tpd, 2), "CV (Kcal/kg)": cv_org_dry})
+                        
+                        org_dry_frac = data['dry_frac']  
+                        org_wet_frac = 1.0 - org_dry_frac
+
+                        dry_tpd_org = adjusted_tpd * org_dry_frac
+                        wet_tpd_org = adjusted_tpd * org_wet_frac
+
+                        total_kcal += wet_tpd_org * cv_org_wet
+                        total_kcal += dry_tpd_org * cv_org_dry
+
+                        wte_energy_data.append({"Material": f"{name} (WET)", "Tons/Day": round(wet_tpd_org, 2), "WtE TPH (24hr)": round(wet_tpd_org / 24.0, 4), "CV (Kcal/kg)": cv_org_wet})
+                        wte_energy_data.append({"Material": f"{name} (DRY)", "Tons/Day": round(dry_tpd_org, 2), "WtE TPH (24hr)": round(dry_tpd_org / 24.0, 4), "CV (Kcal/kg)": cv_org_dry})
                         continue 
 
                     component_kcal = tpd_to_wte * data['cv']
                     total_kcal += component_kcal
-                    wte_energy_data.append({"Material": name.replace('_', ' '), "Tons/Day": round(tpd_to_wte, 2), "CV (Kcal/kg)": data['cv']})
+                    wte_energy_data.append({"Material": name.replace('_', ' '), "Tons/Day": round(tpd_to_wte, 2), "WtE TPH (24hr)": round(tpd_to_wte / 24.0, 4), "CV (Kcal/kg)": data['cv']})
         
         elif 'Sanitary Landfill' in active_destinations:
             final_wte_feed = curr_tpd
