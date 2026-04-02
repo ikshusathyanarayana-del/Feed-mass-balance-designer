@@ -29,7 +29,7 @@ st.sidebar.divider()
 st.sidebar.header("1. Operational Input")
 capacity_tpd = st.sidebar.number_input("Plant Capacity (TPD)", min_value=10, max_value=5000, value=350, step=10)
 
-excel_mode = st.sidebar.toggle("🧮 Match Excel CV Logic", value=True)
+excel_mode = st.sidebar.toggle("🧮 Match Excel CV & CO2 Logic", value=True, help="Overrides dynamic physics to match the legacy flat-multiplier calculations used in the Palawan/Isabela spreadsheets.")
 
 st.sidebar.header("2. Build Your Architecture")
 if tutorial_mode:
@@ -55,8 +55,8 @@ active_modules = st.sidebar.multiselect(
     ]
 )
 
-# NEW: Universal routing toggle for Garden Waste
-route_garden_to_ad = st.sidebar.toggle("🍃 Route Garden Waste to Organics (AD)", value=False, help="If OFF, Garden Waste bypasses the Trommel and goes directly to the residual pile (WtE/Landfill). Turn OFF to match Palawan Excel logic.")
+# Universal routing toggle for Garden Waste (OFF matches Excel, ON matches realistic AD setup)
+route_garden_to_ad = st.sidebar.toggle("🍃 Route Garden Waste to Organics (AD)", value=False, help="If OFF, Garden Waste bypasses the Trommel and goes directly to the residual pile (WtE/Landfill). Turn OFF to match legacy Excel logic.")
 
 active_destinations = st.sidebar.multiselect(
     "Downstream Energy / Disposal",
@@ -90,12 +90,14 @@ with st.sidebar.expander("📊 3. Waste Composition (%)", expanded=False):
 
 # --- EXPANDER 4: MACHINE EFFICIENCIES ---
 with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
-    st.markdown("*Set to 100% to match perfect theoretical Excel models.*")
+    st.markdown("*Note: Defaulting to 100% mirrors perfect theoretical Excel models. Dial back for real-world MRF physics.*")
     eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
     eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) if 'NIR Optical (Plastics)' in active_modules else 0
     eff_trommel = st.slider("Trommel (Organics)", 0, 100, 100) if 'Trommel Screen (Organics)' in active_modules else 0
-    # Changed to number input for precise fractional matching (e.g. 18.61% for Palawan)
-    screw_press_solid = st.number_input("Screw Press Solid Yield (%)", min_value=0.0, max_value=100.0, value=18.61, step=0.1) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
+    
+    # Highly precise slider to capture the 18.61% (Isabela) and 40.00% (Palawan) differences
+    screw_press_solid = st.slider("Screw Press Solid Yield (%)", 0.0, 100.0, 18.61, 0.01) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
+    
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100) if 'Magnetic Separator (Ferrous)' in active_modules else 0
     eff_eddy = st.slider("Eddy Current (Non-Ferrous)", 0, 100, 100) if 'Eddy Current (Non-Ferrous)' in active_modules else 0
     eff_manual = st.slider("Manual Sorting (Inerts)", 0, 100, 100) if 'Manual Sorting (Inerts)' in active_modules else 0
@@ -439,16 +441,12 @@ with tab1:
 
 with tab2:
     st.subheader("🌍 Environmental & CO2e Reduction Models")
-        
-    # --- THE NEW EXCEL MATCH TOGGLE ---
-    match_excel_co2 = st.toggle("🧮 Match Excel CO2 Logic", value=True, help="Overrides dynamic IPCC physics. Takes dynamic tonnages from your mass balance and applies the flat multipliers from the client's Excel screenshot (365 days, 0 grid offsets).")
 
-    if match_excel_co2:
+    if excel_mode:
         st.warning("⚠️ **Excel Mode is ON:** Using your dynamic mass balance tonnages, but calculating emissions using the flat-multiplier formulas from the legacy spreadsheet (365 days/year, NO grid offsets).")
         
         lf_tpd = capacity_tpd * (313.22 / 350.0) 
         
-        # Determine if we need to do the ghost drain or if the module already extracted it
         wte_tpd = final_wte_tpd
         if 'Bag Opener (Leachate Drain)' not in active_modules:
             plant_leachate = capacity_tpd * 0.15
@@ -495,7 +493,6 @@ with tab2:
         st.dataframe(pd.DataFrame(excel_data), use_container_width=True)
         
     else:
-        # --- STANDARD DYNAMIC IPCC MATH ---
         st.markdown("Toggle the subsystems below to instantly calculate your combined Greenhouse Gas (GHG) offsets independent of the main plant layout.")
         t_col1, t_col2, t_col3 = st.columns(3)
         with t_col1: calc_ad = st.toggle("🟢 Include AD Emissions", value=True)
