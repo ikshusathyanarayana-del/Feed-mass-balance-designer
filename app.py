@@ -94,10 +94,7 @@ with st.sidebar.expander("⚙️ 4. Machine Efficiencies (%)", expanded=False):
     eff_bag_leachate = st.slider("Leachate Drain (%)", 0, 30, 15) if 'Bag Opener (Leachate Drain)' in active_modules else 0
     eff_nir = st.slider("NIR Sorter (Plastics)", 0, 100, 100) if 'NIR Optical (Plastics)' in active_modules else 0
     eff_trommel = st.slider("Trommel (Organics)", 0, 100, 100) if 'Trommel Screen (Organics)' in active_modules else 0
-    
-    # Highly precise slider to capture the 18.61% (Isabela) and 40.00% (Palawan) differences
     screw_press_solid = st.slider("Screw Press Solid Yield (%)", 0.0, 100.0, 18.61, 0.01) if 'Screw Press (Wet/Dry Split)' in active_modules else 0
-    
     eff_mag = st.slider("Magnetic Sep (Ferrous)", 0, 100, 100) if 'Magnetic Separator (Ferrous)' in active_modules else 0
     eff_eddy = st.slider("Eddy Current (Non-Ferrous)", 0, 100, 100) if 'Eddy Current (Non-Ferrous)' in active_modules else 0
     eff_manual = st.slider("Manual Sorting (Inerts)", 0, 100, 100) if 'Manual Sorting (Inerts)' in active_modules else 0
@@ -132,6 +129,23 @@ with st.sidebar.expander("💧 & 🔥 5. Moisture & CV Data", expanded=False):
     cv_org_wet = st.number_input("Organic - WET", value=526.0, format="%.2f")
     cv_org_dry = st.number_input("Organic - DRY", value=2629.0, format="%.2f")
     cv_food = st.number_input("Organic - Base (Standard)", value=1200.0, format="%.2f")
+
+# --- EXPANDER 6: POWER & EFFICIENCY ---
+with st.sidebar.expander("⚡ 6. Power Generation Assumptions", expanded=False):
+    st.markdown("**Biogas & AD Parameters**")
+    ad_biogas_yield = st.number_input("Specific Biogas Yield (Nm³/ton wet)", value=120)
+    ad_methane_pct = st.slider("Methane Fraction (%)", 40.0, 75.0, 60.0, 0.1) / 100.0
+    ad_engine_eff = st.slider("Gas Engine Electrical Eff. (%)", 20.0, 50.0, 40.0, 0.1) / 100.0
+    ad_power_parasitic = st.slider("AD Parasitic Load (%)", 0.0, 30.0, 10.0, 0.1) / 100.0
+    
+    st.markdown("**WtE Incinerator Parameters**")
+    wte_plant_eff = st.slider("Steam Turbine Electrical Eff. (%)", 15.0, 35.0, 25.0, 0.1) / 100.0
+    wte_power_parasitic = st.slider("WtE Parasitic Load (%)", 0.0, 30.0, 12.0, 0.1) / 100.0
+    
+    st.markdown("**Pyrolysis Parameters**")
+    pyro_elec_yield = st.number_input("Pyro CHP Yield (MWh/ton plastic)", value=1.92, format="%.2f")
+    pyro_power_parasitic = st.slider("Pyro Parasitic Load (%)", 0.0, 30.0, 15.0, 0.1) / 100.0
+
 
 # ==========================================
 # DATA COMPILATION & UNIVERSAL MASS BALANCE ENGINE
@@ -398,9 +412,9 @@ def run_universal_mass_balance():
     avg_cv_kcal = (total_kcal / curr_tpd) if curr_tpd > 0 else 0
     avg_cv_mj = avg_cv_kcal * 0.004184
 
-    return dot, mass_balance_data, wte_energy_data, avg_cv_kcal, avg_cv_mj, final_wte_feed, ad_tpd_total, plastic_tpd_to_pyro
+    return dot, mass_balance_data, wte_energy_data, avg_cv_kcal, avg_cv_mj, final_wte_feed, ad_tpd_total, plastic_tpd_to_pyro, total_kcal
 
-diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total, plastic_tpd_to_pyro = run_universal_mass_balance()
+diagram, mb_data, wte_data, avg_cv_kcal, avg_cv_mj, final_wte_tpd, ad_tpd_total, plastic_tpd_to_pyro, total_kcal_per_day = run_universal_mass_balance()
 
 if total_input_pct > 100.1 or total_input_pct < 99.9:
     st.warning(f"⚠️ **Note:** Your composition adds up to {total_input_pct:.2f}%. Ideally it should equal exactly 100%.")
@@ -408,7 +422,8 @@ if total_input_pct > 100.1 or total_input_pct < 99.9:
 # ==========================================
 # UI: TABS LAYOUT
 # ==========================================
-tab1, tab2 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & CO2e Impact"])
+# ADDED TAB 3 FOR POWER GENERATION
+tab1, tab2, tab3 = st.tabs(["📊 Mass Balance & Process Flow", "🌍 Environmental & CO2e Impact", "⚡ Power Generation & Biogas CV"])
 
 with tab1:
     st.subheader("Process Flow & Dynamic Mass Balance")
@@ -517,22 +532,23 @@ with tab2:
             st.markdown("**AD Plant Metrics**")
             doc_avg_base = st.slider("Average DOC (Organics)", 0.05, 0.30, 0.16, 0.01)
             doc_f = st.slider("Fraction Degraded (DOCf)", 0.0, 1.0, 0.50, 0.01)
+            # We override the static ad_elec_yield with dynamic math in Tab 3 now, but leave this for standalone CO2
             ad_elec_yield = st.number_input("AD Yield (MWh/ton)", value=0.224, format="%.3f")
-            ad_parasitic = st.slider("AD Parasitic Load (%)", 0.0, 1.0, 0.10, 0.01)
+            ad_parasitic = st.slider("AD Parasitic Load (%) - Env", 0.0, 1.0, 0.10, 0.01)
             
         with col_env3:
             st.markdown("**Pyrolysis Metrics**")
             pyro_oil_yield = st.number_input("Oil Yield (Liters/ton)", value=450)
             pyro_fuel_offset = st.number_input("Fuel Offset (tCO2/L)", value=0.00268, format="%.5f")
-            pyro_elec_yield = st.number_input("Pyro CHP (MWh/ton)", value=1.92, format="%.2f")
-            pyro_parasitic = st.slider("Pyro Parasitic (%)", 0.0, 1.0, 0.15, 0.01)
+            pyro_elec_yield_co2 = st.number_input("Pyro CHP (MWh/ton) - Env", value=1.92, format="%.2f")
+            pyro_parasitic = st.slider("Pyro Parasitic (%) - Env", 0.0, 1.0, 0.15, 0.01)
             
         with col_env4:
             st.markdown("**WtE Incinerator Metrics**")
             wte_elec_yield = st.number_input("WtE Yield (MWh/ton)", value=0.60, format="%.2f")
             wte_avoidance = st.number_input("WtE Methane Avoidance", value=1.00, format="%.2f")
             wte_fossil_ef = st.number_input("Fossil Stack EF", value=0.35, format="%.2f")
-            wte_parasitic = st.slider("WtE Parasitic (%)", 0.0, 1.0, 0.12, 0.01)
+            wte_parasitic = st.slider("WtE Parasitic (%) - Env", 0.0, 1.0, 0.12, 0.01)
 
         if calc_ad and ad_tpd_total > 0:
             M_ad = ad_tpd_total * 330 
@@ -544,7 +560,7 @@ with tab2:
         if calc_pyro and plastic_tpd_to_pyro > 0:
             M_pyro = plastic_tpd_to_pyro * 330
             e_fuel_pyro = M_pyro * pyro_oil_yield * pyro_fuel_offset
-            e_offset_pyro = (M_pyro * pyro_elec_yield) * ef_grid
+            e_offset_pyro = (M_pyro * pyro_elec_yield_co2) * ef_grid
             e_plant_pyro = e_offset_pyro * pyro_parasitic
             total_pyro_co2 = e_fuel_pyro + e_offset_pyro - e_plant_pyro
             
@@ -584,3 +600,59 @@ with tab2:
             w2.metric("Grid Offset (Turbine)", f"+ {e_offset_wte:,.0f} tCO2e")
             w3.metric("Direct Stack Emissions", f"- {e_stack_fossil:,.0f} tCO2e")
             w4.metric("WtE Parasitic Load", f"- {e_plant_wte:,.0f} tCO2e")
+
+# --- NEW TAB: POWER ESTIMATOR ---
+with tab3:
+    st.subheader("⚡ Total Plant Power Generation Estimator")
+    st.markdown("Calculates theoretical thermal power and chemical energy available, converting it to net electrical output based on turbine and gas engine efficiencies configured in the sidebar.")
+    
+    # 1. BIOGAS CV & MATH
+    biogas_cv_kcal_nm3 = ad_methane_pct * 8550  # Pure methane is approx 8550 kcal/Nm3
+    biogas_cv_mj_nm3 = ad_methane_pct * 35.8    # Pure methane is approx 35.8 MJ/Nm3
+    
+    st.markdown("### 🟢 AD Biogas Characteristics")
+    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+    col_g1.metric("Methane Content", f"{ad_methane_pct * 100:.1f}%")
+    col_g2.metric("Biogas CV (Kcal/Nm³)", f"{biogas_cv_kcal_nm3:,.0f}")
+    col_g3.metric("Biogas CV (MJ/Nm³)", f"{biogas_cv_mj_nm3:.2f}")
+    col_g4.metric("Biogas Yield (Nm³/day)", f"{ad_tpd_total * ad_biogas_yield:,.0f}")
+    
+    st.divider()
+    
+    # 2. INDIVIDUAL SYSTEM POWER MATH
+    wte_net_mw = 0
+    ad_net_mw = 0
+    pyro_net_mw = 0
+    
+    # WtE Math (Steam Turbine)
+    if 'WtE Incinerator' in active_destinations and final_wte_tpd > 0:
+        total_mj_per_day = total_kcal_per_day * 0.004184
+        thermal_power_mwt = (total_mj_per_day / (24 * 3600)) * 1000 # Convert MJ/day to MW thermal
+        wte_gross_mw = thermal_power_mwt * wte_plant_eff
+        wte_net_mw = wte_gross_mw * (1.0 - wte_power_parasitic)
+        
+    # AD Math (Gas Engine)
+    if 'Anaerobic Digestion (AD)' in active_destinations and ad_tpd_total > 0:
+        total_biogas_m3 = ad_tpd_total * ad_biogas_yield
+        methane_m3 = total_biogas_m3 * ad_methane_pct
+        energy_kwh_day = methane_m3 * 9.94 # 1 Nm3 CH4 = ~9.94 kWh
+        ad_gross_mw = (energy_kwh_day * ad_engine_eff) / 24.0 / 1000.0
+        ad_net_mw = ad_gross_mw * (1.0 - ad_power_parasitic)
+
+    # Pyrolysis Math (Synthetic Fuel Generator)
+    if 'Pyrolysis' in active_destinations and plastic_tpd_to_pyro > 0:
+        pyro_gross_mw = (plastic_tpd_to_pyro * pyro_elec_yield * 1000) / 24.0 / 1000.0
+        pyro_net_mw = pyro_gross_mw * (1.0 - pyro_power_parasitic)
+        
+    st.markdown("### 🔌 System Electrical Breakdown (Net Export)")
+    p1, p2, p3 = st.columns(3)
+    p1.metric("WtE Turbine Export (MW)", f"{wte_net_mw:.3f} MW")
+    p2.metric("AD Gas Engine Export (MW)", f"{ad_net_mw:.3f} MW")
+    p3.metric("Pyrolysis Export (MW)", f"{pyro_net_mw:.3f} MW")
+    
+    st.divider()
+    
+    # 3. GRAND TOTAL
+    total_plant_mw = wte_net_mw + ad_net_mw + pyro_net_mw
+    st.markdown("<h2 style='text-align: center; color: #1565c0;'>⚡ Total Integrated Plant Net Export</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align: center; font-size: 4rem;'>{total_plant_mw:.3f} MW</h1>", unsafe_allow_html=True)
